@@ -1,0 +1,6 @@
+{
+  "name": "CatPad - Pump.fun Meme Coin Launchpad for Cat Charities",
+  "description": "Launch cat memecoins on Solana with automated, immutable creator fee-sharing directed to verified feline charities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
