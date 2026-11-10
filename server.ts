@@ -314,7 +314,7 @@ app.post('/api/pump/confirm-launch', async (req: Request, res: Response) => {
       name: sanitizeInput(name),
       symbol: sanitizeInput(symbol).toUpperCase(),
       description: sanitizeInput(description),
-      image_url: imageUrl || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&h=600&fit=crop',
+      image_url: imageUrl || '/brand/coin.png',
       metadata_uri: metadataUri || `https://catpad.fun/metadata/${mint}.json`,
       creator_wallet: sanitizeInput(creatorWallet),
       charity_id: charityId,
@@ -441,7 +441,7 @@ app.post('/api/admin/charities', requireAdmin, (req: Request, res: Response) => 
     website: sanitizeInput(website),
     wallet_address: sanitizeInput(wallet_address),
     description: sanitizeInput(description),
-    avatar_url: avatar_url || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=200&h=200&fit=crop',
+    avatar_url: avatar_url || '/brand/coin.png',
     is_verified: true,
     total_donations_sol: 0,
   };
@@ -487,83 +487,6 @@ app.post('/api/admin/launches/:mint/toggle-featured', requireAdmin, (req: Reques
 });
 
 // -----------------------------------------------------------------------------
-// Dynamic OpenGraph Image Route (/api/og)
-// Generates visually striking SVGs for social share previews
-// -----------------------------------------------------------------------------
-app.get('/api/og', (req: Request, res: Response) => {
-  const { mint } = req.query;
-  const launch = mint ? launches.find((l) => l.mint === mint) : null;
-  const charity = launch ? charities.find((c) => c.id === launch.charity_id) : null;
-
-  const title = launch ? `${launch.name} ($${launch.symbol})` : 'CatPad';
-  const subtitle = launch
-    ? `${(launch.donation_bps / 100).toFixed(0)}% Trading Fees Donated to ${charity?.name || 'Cat Charities'}`
-    : 'Pump.fun Memecoin Launchpad for Feline Charities';
-  const bpsBadge = launch ? `${launch.donation_bps / 100}% FEE SHARE TO CHARITY` : 'VERIFIED ON-CHAIN GIVING';
-
-  const svg = `
-  <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#0b0e14"/>
-        <stop offset="50%" stop-color="#141824"/>
-        <stop offset="100%" stop-color="#1a1128"/>
-      </linearGradient>
-      <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#f59e0b"/>
-        <stop offset="100%" stop-color="#ec4899"/>
-      </linearGradient>
-    </defs>
-    
-    <!-- Background -->
-    <rect width="1200" height="630" fill="url(#bg)"/>
-    
-    <!-- Glow circles -->
-    <circle cx="200" cy="150" r="180" fill="#f59e0b" opacity="0.12" filter="blur(60px)"/>
-    <circle cx="1000" cy="480" r="220" fill="#ec4899" opacity="0.12" filter="blur(70px)"/>
-    
-    <!-- Header Badge -->
-    <rect x="80" y="80" width="340" height="48" rx="24" fill="#1e2433" stroke="#f59e0b" stroke-width="2"/>
-    <text x="105" y="111" font-family="sans-serif" font-weight="700" font-size="16" fill="#f59e0b" letter-spacing="2">
-      🐾 ${bpsBadge}
-    </text>
-
-    <!-- Main Title -->
-    <text x="80" y="240" font-family="sans-serif" font-weight="800" font-size="64" fill="#ffffff">
-      ${title}
-    </text>
-
-    <!-- Subtitle -->
-    <text x="80" y="320" font-family="sans-serif" font-weight="500" font-size="28" fill="#94a3b8">
-      ${subtitle}
-    </text>
-
-    <!-- Stat boxes -->
-    <g transform="translate(80, 420)">
-      <rect width="300" height="110" rx="16" fill="#161b26" stroke="#2d3748" stroke-width="1.5"/>
-      <text x="24" y="44" font-family="sans-serif" font-size="16" fill="#64748b" font-weight="600">PROTOCOL</text>
-      <text x="24" y="86" font-family="sans-serif" font-size="30" fill="#ffffff" font-weight="800">Pump.fun + Solana</text>
-    </g>
-
-    <g transform="translate(410, 420)">
-      <rect width="320" height="110" rx="16" fill="#161b26" stroke="#2d3748" stroke-width="1.5"/>
-      <text x="24" y="44" font-family="sans-serif" font-size="16" fill="#64748b" font-weight="600">FEE SHARING</text>
-      <text x="24" y="86" font-family="sans-serif" font-size="30" fill="#10b981" font-weight="800">100% Immutable</text>
-    </g>
-
-    <!-- Watermark Brand -->
-    <text x="960" y="500" font-family="sans-serif" font-weight="900" font-size="36" fill="url(#accent)">
-      CatPad 🐾
-    </text>
-  </svg>
-  `;
-
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.send(svg);
-});
-
-// -----------------------------------------------------------------------------
 // Vite Middleware / Static Serve
 // -----------------------------------------------------------------------------
 async function startServer() {
@@ -584,7 +507,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`🐱 CatPad server running on port ${PORT} [${SOLANA_NETWORK}]`);
+    console.log(`CatPad server running on port ${PORT} [${SOLANA_NETWORK}]`);
   });
 }
 

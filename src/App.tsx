@@ -3,32 +3,63 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { WalletProvider } from './context/WalletContext.tsx';
+import { ToastProvider } from './context/ToastContext.tsx';
+import { SoundProvider } from './context/SoundContext.tsx';
 import { Navbar } from './components/Navbar.tsx';
 import { Footer } from './components/Footer.tsx';
 import { ExplorePage } from './pages/ExplorePage.tsx';
 import { CharitiesPage } from './pages/CharitiesPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
 import { LegalPage } from './pages/LegalPage.tsx';
+import { NotFoundPage } from './pages/NotFoundPage.tsx';
 import { CreateLaunchModal } from './components/CreateLaunchModal.tsx';
 import { TokenDetailModal } from './components/TokenDetailModal.tsx';
 import { DirectDonationModal } from './components/DirectDonationModal.tsx';
-import { Launch, Charity, Donation } from './types.ts';
+import { Charity, Donation, Launch, Tab } from './types.ts';
+
+const PATH_TO_TAB: Record<string, Tab> = {
+  '/': 'explore',
+  '/coins': 'explore',
+  '/shelters': 'charities',
+  '/charities': 'charities',
+  '/admin': 'admin',
+  '/terms': 'terms',
+  '/privacy': 'privacy',
+  '/risk': 'risk',
+};
+
+const TAB_TO_PATH: Record<Tab, string> = {
+  explore: '/',
+  launch: '/',
+  charities: '/shelters',
+  admin: '/admin',
+  terms: '/terms',
+  privacy: '/privacy',
+  risk: '/risk',
+};
+
+const readRoute = (): { tab: Tab; notFound: boolean } => {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  const tab = PATH_TO_TAB[path];
+  return tab ? { tab, notFound: false } : { tab: 'explore', notFound: true };
+};
 
 export function AppContent() {
-  const [currentTab, setCurrentTab] = useState<'explore' | 'launch' | 'charities' | 'admin' | 'terms' | 'privacy'>('explore');
+  const initialRoute = readRoute();
+
+  const [currentTab, setCurrentTab] = useState<Tab>(initialRoute.tab);
+  const [notFound, setNotFound] = useState(initialRoute.notFound);
   const [launches, setLaunches] = useState<Launch[]>([]);
   const [charities, setCharities] = useState<Charity[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Modals
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<Launch | null>(null);
   const [selectedCharityForDonate, setSelectedCharityForDonate] = useState<Charity | null>(null);
 
-  // Fetch all initial data
   const fetchData = useCallback(async () => {
     try {
       const [launchesRes, charitiesRes, donationsRes] = await Promise.all([
@@ -57,19 +88,44 @@ export function AppContent() {
     fetchData();
   }, [fetchData]);
 
-  // Support URL search params (e.g. ?token=... or ?tab=...)
+  /** Navigate without a full reload, keeping URLs shareable. */
+  const navigate = useCallback((tab: Tab) => {
+    if (tab === 'launch') {
+      setIsLaunchModalOpen(true);
+      return;
+    }
+    setCurrentTab(tab);
+    setNotFound(false);
+    const path = TAB_TO_PATH[tab] || '/';
+    if (window.location.pathname !== path) {
+      window.history.pushState({ tab }, '', path);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const route = readRoute();
+      setCurrentTab(route.tab);
+      setNotFound(route.notFound);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Support deep links: ?token=<mint> or ?tab=<tab>
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tokenMint = params.get('token');
-    const tabParam = params.get('tab') as any;
+    const tabParam = params.get('tab') as Tab | null;
 
     if (tokenMint && launches.length > 0) {
       const match = launches.find((l) => l.mint === tokenMint);
       if (match) setSelectedToken(match);
     }
 
-    if (['explore', 'charities', 'admin', 'terms', 'privacy'].includes(tabParam)) {
+    if (tabParam && tabParam in TAB_TO_PATH && tabParam !== 'launch') {
       setCurrentTab(tabParam);
+      setNotFound(false);
     }
   }, [launches]);
 
@@ -78,39 +134,25 @@ export function AppContent() {
     fetchData();
   };
 
-  const handleDonationSuccess = (_amount: number) => {
+  const handleDonationSuccess = () => {
     fetchData();
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0b0e14] text-slate-100 selection:bg-amber-500 selection:text-black">
-      {/* Top Navigation */}
-      <Navbar
-        currentTab={currentTab}
-        setCurrentTab={(tab) => {
-          if (tab === 'launch') {
-            setIsLaunchModalOpen(true);
-          } else {
-            setCurrentTab(tab);
-          }
-        }}
-        openLaunchModal={() => setIsLaunchModalOpen(true)}
-      />
+    <div className="flex min-h-screen flex-col bg-black text-white">
+      <Navbar currentTab={currentTab} setCurrentTab={navigate} openLaunchModal={() => setIsLaunchModalOpen(true)} />
 
-      {/* Main Page Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-        {isLoading ? (
-          <div className="py-24 text-center">
-            <div className="w-10 h-10 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-xs font-mono text-slate-400">Loading CatPad on Solana...</p>
-          </div>
+      <main className="flex-1">
+        {notFound ? (
+          <NotFoundPage onGoHome={() => navigate('explore')} />
         ) : (
           <>
             {currentTab === 'explore' && (
               <ExplorePage
                 launches={launches}
                 charities={charities}
-                onSelectToken={(token) => setSelectedToken(token)}
+                isLoading={isLoading}
+                onSelectToken={setSelectedToken}
                 openLaunchModal={() => setIsLaunchModalOpen(true)}
               />
             )}
@@ -119,8 +161,9 @@ export function AppContent() {
               <CharitiesPage
                 charities={charities}
                 launches={launches}
-                onOpenDonate={(charity) => setSelectedCharityForDonate(charity)}
-                onSelectToken={(token) => setSelectedToken(token)}
+                isLoading={isLoading}
+                onOpenDonate={setSelectedCharityForDonate}
+                onSelectToken={setSelectedToken}
                 openLaunchModal={() => setIsLaunchModalOpen(true)}
               />
             )}
@@ -134,17 +177,15 @@ export function AppContent() {
               />
             )}
 
-            {(currentTab === 'terms' || currentTab === 'privacy') && (
+            {(currentTab === 'terms' || currentTab === 'privacy' || currentTab === 'risk') && (
               <LegalPage page={currentTab} />
             )}
           </>
         )}
       </main>
 
-      {/* Footer */}
-      <Footer setCurrentTab={setCurrentTab} />
+      <Footer setCurrentTab={navigate} />
 
-      {/* Create Token Launch Modal */}
       <CreateLaunchModal
         charities={charities}
         isOpen={isLaunchModalOpen}
@@ -152,14 +193,12 @@ export function AppContent() {
         onLaunchSuccess={handleLaunchSuccess}
       />
 
-      {/* Token Details & Sharing Modal */}
       <TokenDetailModal
         launch={selectedToken}
         charity={charities.find((c) => c.id === selectedToken?.charity_id)}
         onClose={() => setSelectedToken(null)}
       />
 
-      {/* Direct Charity Donation Modal */}
       <DirectDonationModal
         charity={selectedCharityForDonate}
         isOpen={!!selectedCharityForDonate}
@@ -172,8 +211,12 @@ export function AppContent() {
 
 export default function App() {
   return (
-    <WalletProvider>
-      <AppContent />
-    </WalletProvider>
+    <ToastProvider>
+      <SoundProvider>
+        <WalletProvider>
+          <AppContent />
+        </WalletProvider>
+      </SoundProvider>
+    </ToastProvider>
   );
 }

@@ -30,6 +30,22 @@ Before building CatPad, we conducted an in-depth investigation of Pump.fun's on-
 
 ---
 
+## 🎨 Design System & Brand Assets
+
+CatPad uses a flat, custom visual language: pure black canvas, flat dark-grey cards with thin borders, a single orange accent (`#FF6A00`), grotesk headlines and mono type for numbers, tickers and labels. No gradients, glows or emoji.
+
+Design tokens live in `src/index.css` (Tailwind v4 `@theme`): `bg-ink`, `bg-card`, `border-line`, `text-muted`, `text-accent`.
+
+Replace the placeholder brand files in `public/` and `public/brand/` with the real exports using the same filenames — `logo.svg`, `favicon.svg`, `og.png`, `hero.mp4`, `hero-poster.png`, `coin.png`. See `public/brand/README.md` for the full list.
+
+Optional public configuration (see `.env.example`):
+
+* `VITE_X_HANDLE` — handle shown in the footer, meta tags and share links.
+* `VITE_ADMIN_WALLETS` — comma-separated wallets allowed to see the admin link.
+* `VITE_ENABLE_DEVNET_WALLET` — exposes “Generate devnet test wallet” in production builds (always on in dev).
+
+---
+
 ## 🚀 Quick Start & Installation
 
 ### Prerequisites
@@ -113,8 +129,8 @@ The seed script (`/supabase/seed.ts`) provisions 4 real-world verified cat non-p
 
 ## 🔒 Security & Admin Access
 
-* **Admin Route:** `/admin`
-* **Default Passphrase:** `catpad-admin-key-2026`
+* **Admin Route:** `/admin` (the nav link only appears for wallets listed in `VITE_ADMIN_WALLETS`)
+* **Default dev passphrase:** `catpad-admin-key-2026` (set `ADMIN_SECRET_KEY` outside development)
 * **Server-Side Role Verification:** Every admin request (`/api/admin/*`) enforces cryptographic Bearer token validation through server middleware; client-only bypass is impossible.
 * **On-Chain Confirmation:** All token launches and donations are verified on the Solana RPC node before insertion into the database.
 

@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Connection, PublicKey, Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { getWalletProvider, WalletId, WALLET_OPTIONS } from '../lib/wallets.tsx';
+import { DEVNET_WALLET_ENABLED } from '../lib/brand.ts';
 
 interface WalletContextType {
   connected: boolean;
@@ -8,8 +10,10 @@ interface WalletContextType {
   publicKeyString: string;
   balanceSol: number;
   walletType: 'browser' | 'generated' | null;
+  walletName: string | null;
   isConnecting: boolean;
   network: string;
+  connectWallet: (id: WalletId) => Promise<boolean>;
   connectBrowserWallet: () => Promise<boolean>;
   generateTestWallet: () => Promise<void>;
   importPrivateKey: (base58Key: string) => Promise<boolean>;
@@ -32,12 +36,22 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [publicKey, setPublicKey] = useState<PublicKey | null>(null);
   const [balanceSol, setBalanceSol] = useState<number>(0);
   const [walletType, setWalletType] = useState<'browser' | 'generated' | null>(null);
+  const [walletName, setWalletName] = useState<string | null>(null);
   const [generatedKeypair, setGeneratedKeypair] = useState<any>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [network, setNetwork] = useState<string>('devnet');
 
-  // Solana Connection
+  const providerRef = useRef<any>(null);
   const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+
+  useEffect(() => {
+    fetch('/api/network-status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.network) setNetwork(data.network);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchBalance = useCallback(async (pubkey: PublicKey) => {
     try {
@@ -48,7 +62,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  // Poll balance periodically when connected
+  // Keep the balance fresh while a wallet is connected
   useEffect(() => {
     if (!publicKey) return;
     fetchBalance(publicKey);
@@ -58,42 +72,53 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => clearInterval(interval);
   }, [publicKey, fetchBalance]);
 
-  // Connect Phantom / Solflare browser extension
-  const connectBrowserWallet = async (): Promise<boolean> => {
+  /** Connect a specific injected wallet (Phantom / Solflare / Backpack). */
+  const connectWallet = async (id: WalletId): Promise<boolean> => {
     setIsConnecting(true);
     try {
-      const anyWindow = window as any;
-      const provider = anyWindow.solana || anyWindow.phantom?.solana;
+      const provider = getWalletProvider(id);
       if (!provider) {
-        alert('No Solana browser extension detected (like Phantom or Solflare). You can use "Generate Devnet Test Wallet" to test instantly without an extension!');
         setIsConnecting(false);
         return false;
       }
 
-      const resp = await provider.connect();
-      const pubkey = new PublicKey(resp.publicKey.toString());
+      const resp: any = await provider.connect();
+      const rawKey = resp?.publicKey || provider.publicKey;
+      if (!rawKey) throw new Error('Wallet did not return a public key');
+
+      const pubkey = new PublicKey(rawKey.toString());
+      providerRef.current = provider;
       setPublicKey(pubkey);
       setConnected(true);
       setWalletType('browser');
+      setWalletName(WALLET_OPTIONS.find((w) => w.id === id)?.name || 'Wallet');
       setGeneratedKeypair(null);
       await fetchBalance(pubkey);
       setIsConnecting(false);
       return true;
-    } catch (err: any) {
+    } catch (err) {
       console.error('Wallet connect error:', err);
       setIsConnecting(false);
       return false;
     }
   };
 
-  // Generate an instant in-memory Devnet test wallet
+  // Backwards-compatible helper: connect whichever extension is available.
+  const connectBrowserWallet = async (): Promise<boolean> => {
+    const available = WALLET_OPTIONS.find((w) => getWalletProvider(w.id));
+    if (!available) return false;
+    return connectWallet(available.id);
+  };
+
+  // Generate an instant in-memory Devnet test wallet (development only)
   const generateTestWallet = async () => {
     const kp = await (Keypair as any).generate();
+    providerRef.current = null;
     setGeneratedKeypair(kp);
     setPublicKey(kp.publicKey);
     setConnected(true);
     setWalletType('generated');
-    // Store in localStorage for session persistence
+    setWalletName('Devnet test wallet');
     try {
       if (kp.secretKey) {
         localStorage.setItem('catpad_devnet_secret', bs58.encode(kp.secretKey));
@@ -106,10 +131,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       const decoded = bs58.decode(base58Key.trim());
       const kp = await (Keypair as any).fromSecretKey(decoded);
+      providerRef.current = null;
       setGeneratedKeypair(kp);
       setPublicKey(kp.publicKey);
       setConnected(true);
       setWalletType('generated');
+      setWalletName('Devnet test wallet');
       localStorage.setItem('catpad_devnet_secret', base58Key.trim());
       fetchBalance(kp.publicKey);
       return true;
@@ -118,11 +145,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Auto-restore test keypair if saved
+  // Restore a saved devnet keypair, but only when the dev flag allows it.
   useEffect(() => {
     const saved = localStorage.getItem('catpad_devnet_secret');
-    if (saved && !publicKey) {
-      importPrivateKey(saved);
+    if (!saved) return;
+    if (DEVNET_WALLET_ENABLED) {
+      if (!publicKey) importPrivateKey(saved);
+    } else {
+      localStorage.removeItem('catpad_devnet_secret');
     }
   }, []);
 
@@ -135,33 +165,30 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return sig;
     } catch (e: any) {
       console.warn('Airdrop failed or rate limited:', e);
-      // Give simulated balance if devnet faucet is rate-limited
-      setBalanceSol((prev) => prev + 1.0);
-      return 'simulated-airdrop-success';
+      return null;
     }
   };
 
   const disconnect = () => {
-    const anyWindow = window as any;
-    if (walletType === 'browser' && (anyWindow.solana || anyWindow.phantom?.solana)) {
+    const provider = providerRef.current;
+    if (walletType === 'browser' && provider?.disconnect) {
       try {
-        (anyWindow.solana || anyWindow.phantom?.solana).disconnect();
+        provider.disconnect();
       } catch (_) {}
     }
+    providerRef.current = null;
     setConnected(false);
     setPublicKey(null);
     setBalanceSol(0);
     setWalletType(null);
+    setWalletName(null);
     setGeneratedKeypair(null);
     localStorage.removeItem('catpad_devnet_secret');
   };
 
   /**
-   * Builds and signs the real Solana transaction bundling:
-   * 1. Token mint initialization
-   * 2. Pump.fun bonding curve creation
-   * 3. PumpFees creator fee sharing configuration allocating donationBps to charity
-   * 4. Optional initial dev buy in SOL
+   * Builds and signs the Solana transaction for a launch:
+   * token mint keypair + proof-of-launch transfer to the charity wallet.
    */
   const signAndSendLaunchTransaction = async (data: {
     mintKeypair: any;
@@ -177,29 +204,26 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const charityPubkey = new PublicKey(data.charityWallet);
     const mintPubkey = data.mintKeypair.publicKey;
 
-    // Build real Solana Transaction
     const tx = new Transaction();
     const { blockhash } = await connection.getLatestBlockhash('confirmed');
     tx.recentBlockhash = blockhash;
     tx.feePayer = publicKey;
 
-    // 1. If dev initial buy requested, add a small transfer as proof of funds
     if (data.initialBuySol > 0) {
       const lamports = Math.floor(data.initialBuySol * Number(LAMPORTS_PER_SOL));
       tx.add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: charityPubkey,
-          lamports: Math.min(lamports, 1000000), // safe micro dev buy
+          lamports: Math.min(lamports, 1000000),
         })
       );
     } else {
-      // Add minimum micro proof memo or transfer to charity
       tx.add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: charityPubkey,
-          lamports: 1000, // 0.000001 SOL proof-of-launch
+          lamports: 1000,
         })
       );
     }
@@ -207,24 +231,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let signature = '';
 
     if (walletType === 'generated' && generatedKeypair) {
-      // Sign with both creator keypair and new token mint keypair
       tx.sign(generatedKeypair, data.mintKeypair);
       try {
         const rawBytes = await (tx as any).serialize();
         signature = await connection.sendRawTransaction(rawBytes);
         await connection.confirmTransaction(signature, 'confirmed');
       } catch (sendErr) {
-        // If RPC node rejected due to devnet rate limits, create verified deterministic signature
         const sigBytes = tx.signatures?.[0]?.signature || new Uint8Array(64);
         signature = bs58.encode(sigBytes);
       }
     } else {
-      // Browser wallet (Phantom, Solflare, etc.)
-      const anyWindow = window as any;
-      const provider = anyWindow.solana || anyWindow.phantom?.solana;
-      if (!provider) throw new Error('Browser wallet provider not found');
+      const provider = providerRef.current;
+      if (!provider?.signTransaction) throw new Error('Wallet cannot sign transactions');
 
-      // Partially sign with mint keypair first
       tx.partialSign(data.mintKeypair);
       const signedTx = await provider.signTransaction(tx);
       try {
@@ -243,9 +262,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   };
 
-  /**
-   * Direct SOL donation to a charity's verified on-chain wallet
-   */
+  /** Direct SOL donation to a charity's verified on-chain wallet. */
   const sendDirectSolDonation = async (targetWallet: string, amountSol: number): Promise<string> => {
     if (!publicKey) throw new Error('Wallet not connected');
     const recipient = new PublicKey(targetWallet);
@@ -276,9 +293,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         signature = bs58.encode(sigBytes);
       }
     } else {
-      const anyWindow = window as any;
-      const provider = anyWindow.solana || anyWindow.phantom?.solana;
-      if (!provider) throw new Error('Browser wallet provider not found');
+      const provider = providerRef.current;
+      if (!provider?.signTransaction) throw new Error('Wallet cannot sign transactions');
       const signed = await provider.signTransaction(tx);
       try {
         const rawBytes = await (signed as any).serialize();
@@ -290,7 +306,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
 
-    // Refresh balance
     await fetchBalance(publicKey);
     return signature;
   };
@@ -303,8 +318,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         publicKeyString: publicKey ? publicKey.toBase58() : '',
         balanceSol,
         walletType,
+        walletName,
         isConnecting,
         network,
+        connectWallet,
         connectBrowserWallet,
         generateTestWallet,
         importPrivateKey,

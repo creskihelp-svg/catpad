@@ -1,21 +1,19 @@
 import React, { useState } from 'react';
+import { ArrowUpRight, Check, Copy, ExternalLink, HeartHandshake, ShieldCheck } from 'lucide-react';
 import { Charity, Launch } from '../types.ts';
-import { 
-  HeartHandshake, 
-  ShieldCheck, 
-  ExternalLink, 
-  Copy, 
-  Check, 
-  Coins, 
-  Lock, 
-  Heart,
-  Globe,
-  Rocket
-} from 'lucide-react';
+import { useToast } from '../context/ToastContext.tsx';
+import {
+  CharityCardSkeleton,
+  EmptyState,
+  Reveal,
+  SectionLabel,
+} from '../components/ui/Primitives.tsx';
+import { formatPercent, hasValue, shortAddress } from '../lib/format.ts';
 
 interface CharitiesPageProps {
   charities: Charity[];
   launches: Launch[];
+  isLoading: boolean;
   onOpenDonate: (charity: Charity) => void;
   onSelectToken: (launch: Launch) => void;
   openLaunchModal: () => void;
@@ -24,210 +22,203 @@ interface CharitiesPageProps {
 export const CharitiesPage: React.FC<CharitiesPageProps> = ({
   charities,
   launches,
+  isLoading,
   onOpenDonate,
   onSelectToken,
   openLaunchModal,
 }) => {
+  const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const totalRaisedSol = charities.reduce((sum, c) => sum + Number(c.total_donations_sol), 0);
+  const linkedTokenCount = new Set(launches.map((l) => l.charity_id)).size;
+
+  const handleCopy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId(null), 1600);
+    } catch {
+      toast('Could not copy the wallet address', 'error');
+    }
   };
 
-  const totalRaisedSol = charities.reduce((sum, c) => sum + Number(c.total_donations_sol), 0);
-
   return (
-    <div className="space-y-12 text-left animate-fadeIn">
-      {/* Impact Header */}
-      <div className="rounded-3xl p-8 sm:p-10 border border-pink-500/20 bg-gradient-to-br from-pink-950/20 via-[#0e1320] to-[#121826]">
+    <div className="mx-auto w-full max-w-7xl px-5 py-16 lg:px-8">
+      <Reveal>
         <div className="max-w-3xl">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-pink-500/15 border border-pink-500/30 text-pink-300 text-xs font-mono font-bold mb-3">
-            <HeartHandshake className="w-3.5 h-3.5" />
-            <span>100% Autonomous On-Chain Giving</span>
-          </div>
-
-          <h1 className="text-3xl sm:text-4xl font-black text-white">
-            Verified Feline Charities & Direct Impact
+          <SectionLabel>03 / Verified shelters</SectionLabel>
+          <h1 className="mt-3 text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl">
+            The shelters on the other side of the fee split
           </h1>
-
-          <p className="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed">
-            Every charity listed on CatPad undergoes manual on-chain and non-profit verification. When creators launch with CatPad, Pump.fun creator fees are split via immutable Program Derived Addresses (PDAs) directly to these wallets. CatPad never holds custody of user or charity funds.
+          <p className="mt-4 text-sm leading-relaxed text-muted sm:text-base">
+            Every organisation here is verified manually and controls the Solana wallet it receives to.
+            CatPad never custodies funds — fee splits are enforced by on-chain PDAs.
           </p>
-
-          <div className="mt-6 flex flex-wrap items-center gap-6 text-xs font-mono">
-            <div>
-              <span className="text-slate-400 block">TOTAL VOLUME GIVEN</span>
-              <span className="text-2xl font-black text-emerald-400 font-mono">
-                {totalRaisedSol.toFixed(2)} SOL
-              </span>
-            </div>
-            <div className="h-8 w-px bg-slate-800 hidden sm:block" />
-            <div>
-              <span className="text-slate-400 block">VERIFIED SHELTERS</span>
-              <span className="text-2xl font-black text-pink-400 font-mono">
-                {charities.length} Non-Profits
-              </span>
-            </div>
-            <div className="h-8 w-px bg-slate-800 hidden sm:block" />
-            <div>
-              <span className="text-slate-400 block">CUSTODY MODEL</span>
-              <span className="text-sm font-bold text-slate-200 flex items-center space-x-1 mt-1">
-                <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Zero Custody (Direct to Wallet)</span>
-              </span>
-            </div>
-          </div>
         </div>
+      </Reveal>
+
+      {(hasValue(totalRaisedSol) || hasValue(charities.length) || hasValue(linkedTokenCount)) && (
+        <Reveal delay={60}>
+          <div className="mt-10 grid grid-cols-2 gap-x-6 gap-y-8 border-y border-line py-8 sm:grid-cols-3">
+            {hasValue(totalRaisedSol) && (
+              <div>
+                <SectionLabel className="tracking-[0.16em]">Given to shelters</SectionLabel>
+                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">
+                  {totalRaisedSol.toFixed(2)} SOL
+                </p>
+              </div>
+            )}
+            {hasValue(charities.length) && (
+              <div>
+                <SectionLabel className="tracking-[0.16em]">Verified partners</SectionLabel>
+                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">{charities.length}</p>
+              </div>
+            )}
+            {hasValue(linkedTokenCount) && (
+              <div>
+                <SectionLabel className="tracking-[0.16em]">Shelters with a live coin</SectionLabel>
+                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">{linkedTokenCount}</p>
+              </div>
+            )}
+          </div>
+        </Reveal>
+      )}
+
+      <div className="mt-10 flex items-center justify-between gap-4">
+        <SectionLabel>Partners</SectionLabel>
+        <button
+          type="button"
+          onClick={openLaunchModal}
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:bg-accent-hover"
+        >
+          Launch for a shelter
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
       </div>
 
-      {/* Charities List Grid */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white flex items-center space-x-2">
-            <span>Verified Partners</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
-              On-Chain Approved
-            </span>
-          </h2>
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {isLoading &&
+          Array.from({ length: 4 }).map((_, i) => <CharityCardSkeleton key={i} />)}
 
-          <button
-            onClick={openLaunchModal}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center space-x-1.5 transition"
-          >
-            <Rocket className="w-3.5 h-3.5" />
-            <span>Launch Coin for Charity</span>
-          </button>
-        </div>
+        {!isLoading && charities.length === 0 && (
+          <div className="md:col-span-2">
+            <EmptyState
+              icon={<HeartHandshake className="h-6 w-6" />}
+              title="No shelters listed yet"
+              copy="Verified rescue partners will appear here once they are onboarded."
+            />
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {charities.map((charity) => {
+        {!isLoading &&
+          charities.map((charity) => {
             const linkedLaunches = launches.filter((l) => l.charity_id === charity.id);
             const isCopied = copiedId === charity.id;
 
             return (
-              <div
-                key={charity.id}
-                className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-pink-500/40 transition duration-300 flex flex-col justify-between space-y-5"
-              >
-                <div>
-                  {/* Charity Header */}
-                  <div className="flex items-start space-x-4">
-                    <img
-                      src={charity.avatar_url}
-                      alt={charity.name}
-                      className="w-16 h-16 rounded-2xl object-cover border-2 border-pink-500/30 flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-1.5">
-                        <h3 className="text-base font-extrabold text-white truncate">{charity.name}</h3>
-                        <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      </div>
-
-                      {charity.ein_tax_id && (
-                        <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
-                          501(c)(3) EIN: {charity.ein_tax_id}
-                        </span>
+              <article key={charity.id} className="flex flex-col rounded-xl border border-line bg-card p-6">
+                <div className="flex items-start gap-4">
+                  <img
+                    src={charity.avatar_url}
+                    alt=""
+                    className="h-14 w-14 flex-shrink-0 rounded-lg border border-line object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h2 className="truncate text-base font-semibold text-white">{charity.name}</h2>
+                      {charity.is_verified && (
+                        <ShieldCheck className="h-4 w-4 flex-shrink-0 text-accent" aria-label="Verified" />
                       )}
-
-                      <a
-                        href={charity.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-amber-400 hover:underline flex items-center space-x-1 mt-1 font-mono"
-                      >
-                        <Globe className="w-3 h-3" />
-                        <span>{charity.website.replace('https://', '')}</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
                     </div>
-                  </div>
-
-                  {/* Mission Description */}
-                  <p className="mt-4 text-xs text-slate-300 leading-relaxed">
-                    {charity.description}
-                  </p>
-
-                  {/* Solana Wallet Address */}
-                  <div className="mt-4 p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs font-mono">
-                    <div className="truncate pr-2">
-                      <span className="text-[10px] text-slate-400 block uppercase">Solana Receiving Address</span>
-                      <span className="text-slate-300 truncate">{charity.wallet_address}</span>
-                    </div>
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        onClick={() => handleCopy(charity.id, charity.wallet_address)}
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
-                        title="Copy Address"
-                      >
-                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                      <a
-                        href={`https://solscan.io/account/${charity.wallet_address}?cluster=devnet`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
-                        title="View on Solscan"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Impact Metrics & Actions */}
-                <div className="pt-4 border-t border-slate-800/80 space-y-4">
-                  <div className="flex items-center justify-between text-xs">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] font-mono uppercase">Total Donations Raised</span>
-                      <span className="text-base font-extrabold font-mono text-emerald-400">
-                        {Number(charity.total_donations_sol).toFixed(2)} SOL
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-slate-400 block text-[10px] font-mono uppercase">Tokens Funding</span>
-                      <span className="text-sm font-bold text-slate-200">
-                        {linkedLaunches.length} Memecoins
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Supporting Tokens Pill Carousel */}
-                  {linkedLaunches.length > 0 && (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] text-slate-400 font-mono">Supporting Coins:</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {linkedLaunches.map((t) => (
-                          <button
-                            key={t.id}
-                            onClick={() => onSelectToken(t)}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-mono font-bold text-amber-300 flex items-center space-x-1 transition"
-                          >
-                            <span>${t.symbol}</span>
-                            <span className="text-[10px] text-pink-400">({t.donation_bps / 100}%)</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Direct Donate Button */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onOpenDonate(charity)}
-                      className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-pink-500/20 transition cursor-pointer"
+                    <p className="mt-0.5 font-mono text-[11px] text-muted">
+                      {charity.ein_tax_id ? `501(c)(3) EIN ${charity.ein_tax_id}` : 'Verified partner'}
+                    </p>
+                    <a
+                      href={charity.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition hover:text-white"
                     >
-                      <Heart className="w-3.5 h-3.5 fill-white" />
-                      <span>Donate SOL Directly</span>
-                    </button>
+                      {charity.website.replace(/^https?:\/\//, '')}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   </div>
                 </div>
-              </div>
+
+                <p className="mt-4 text-xs leading-relaxed text-muted">{charity.description}</p>
+
+                <div className="mt-5 flex items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2.5">
+                  <div className="min-w-0">
+                    <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
+                      Receiving wallet
+                    </span>
+                    <span className="font-mono text-xs text-white">{shortAddress(charity.wallet_address, 6)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(charity.id, charity.wallet_address)}
+                      aria-label="Copy wallet address"
+                      className="rounded-md border border-line p-1.5 text-muted transition hover:border-line-strong hover:text-white"
+                    >
+                      {isCopied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                    <a
+                      href={`https://solscan.io/account/${charity.wallet_address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="View wallet on Solscan"
+                      className="rounded-md border border-line p-1.5 text-muted transition hover:border-line-strong hover:text-white"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-end justify-between border-t border-line pt-4">
+                  <div>
+                    <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
+                      Total received
+                    </span>
+                    <span className="font-mono text-lg text-white">
+                      {Number(charity.total_donations_sol).toFixed(2)} SOL
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
+                      Coins
+                    </span>
+                    <span className="font-mono text-sm text-white">{linkedLaunches.length}</span>
+                  </div>
+                </div>
+
+                {linkedLaunches.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {linkedLaunches.map((token) => (
+                      <button
+                        key={token.id}
+                        type="button"
+                        onClick={() => onSelectToken(token)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[11px] text-white transition hover:border-accent hover:text-accent"
+                      >
+                        ${token.symbol}
+                        <span className="text-muted">{formatPercent(token.donation_bps)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onOpenDonate(charity)}
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong px-4 py-2.5 text-sm font-medium text-white transition hover:border-accent hover:text-accent"
+                >
+                  Donate SOL directly
+                </button>
+              </article>
             );
           })}
-        </div>
       </div>
     </div>
   );

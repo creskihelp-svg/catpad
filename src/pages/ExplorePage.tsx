@@ -1,267 +1,321 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowRight, ArrowUpRight, Coins, Search, SlidersHorizontal } from 'lucide-react';
 import { Launch, Charity } from '../types.ts';
 import { TokenCard } from '../components/TokenCard.tsx';
-import { 
-  Search, 
-  Flame, 
-  Heart, 
-  Sparkles, 
-  Rocket, 
-  Filter, 
-  TrendingUp, 
-  Lock, 
-  ShieldCheck,
-  Coins
-} from 'lucide-react';
+import {
+  EmptyState,
+  Reveal,
+  SectionLabel,
+  TokenCardSkeleton,
+} from '../components/ui/Primitives.tsx';
+import { useSound } from '../context/SoundContext.tsx';
+import { BRAND } from '../lib/brand.ts';
+import { hasValue } from '../lib/format.ts';
 
 interface ExplorePageProps {
   launches: Launch[];
   charities: Charity[];
+  isLoading: boolean;
   onSelectToken: (launch: Launch) => void;
   openLaunchModal: () => void;
 }
 
+type FilterType = 'newest' | 'featured' | 'top_bps' | 'market_cap';
+
+const FILTERS: Array<{ id: FilterType; label: string }> = [
+  { id: 'newest', label: 'Newest' },
+  { id: 'featured', label: 'Featured' },
+  { id: 'top_bps', label: 'Top charity share' },
+  { id: 'market_cap', label: 'Market cap' },
+];
+
 export const ExplorePage: React.FC<ExplorePageProps> = ({
   launches,
   charities,
+  isLoading,
   onSelectToken,
   openLaunchModal,
 }) => {
+  const { muted } = useSound();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'featured' | 'top_bps' | 'market_cap' | 'newest'>('all');
-  const [selectedCharityFilter, setSelectedCharityFilter] = useState<string>('all');
+  const [filterType, setFilterType] = useState<FilterType>('newest');
+  const [charityFilter, setCharityFilter] = useState<string>('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Aggregated stats
+  const videoWrapRef = useRef<HTMLDivElement | null>(null);
+  const coinRef = useRef<HTMLImageElement | null>(null);
+
+  // Subtle parallax: the background drifts and the coin moves as you scroll.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const y = window.scrollY;
+        if (videoWrapRef.current && y < 1200) {
+          videoWrapRef.current.style.transform = `translate3d(0, ${y * 0.14}px, 0)`;
+        }
+        if (coinRef.current && y < 1200) {
+          coinRef.current.style.transform = `translate3d(0, ${y * -0.1}px, 0)`;
+        }
+      });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
   const totalDonationsSol = charities.reduce((acc, c) => acc + Number(c.total_donations_sol), 0);
-  const totalTokens = launches.length;
   const verifiedCharityCount = charities.filter((c) => c.is_verified).length;
+  const avgCharityShare = launches.length
+    ? Math.round(launches.reduce((acc, l) => acc + l.donation_bps, 0) / launches.length / 100)
+    : 0;
 
-  // Filtered launches
-  const filteredLaunches = launches.filter((launch) => {
-    // Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = launch.name.toLowerCase().includes(q);
-      const matchSymbol = launch.symbol.toLowerCase().includes(q);
-      const matchMint = launch.mint.toLowerCase().includes(q);
-      if (!matchName && !matchSymbol && !matchMint) return false;
-    }
+  const filteredLaunches = launches
+    .filter((launch) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matches =
+          launch.name.toLowerCase().includes(q) ||
+          launch.symbol.toLowerCase().includes(q) ||
+          launch.mint.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      if (charityFilter !== 'all' && launch.charity_id !== charityFilter) return false;
+      if (filterType === 'featured' && !launch.is_featured) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (filterType === 'top_bps') return b.donation_bps - a.donation_bps;
+      if (filterType === 'market_cap') return Number(b.market_cap_sol) - Number(a.market_cap_sol);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
-    // Charity filter
-    if (selectedCharityFilter !== 'all' && launch.charity_id !== selectedCharityFilter) {
-      return false;
-    }
-
-    // Tab filter
-    if (filterType === 'featured' && !launch.is_featured) return false;
-    return true;
-  });
-
-  // Sorting
-  filteredLaunches.sort((a, b) => {
-    if (filterType === 'top_bps') return b.donation_bps - a.donation_bps;
-    if (filterType === 'market_cap') return Number(b.market_cap_sol) - Number(a.market_cap_sol);
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
+  const stats = [
+    { label: 'Donated to shelters', value: `${totalDonationsSol.toFixed(1)} SOL`, show: hasValue(totalDonationsSol) },
+    { label: 'Verified shelters', value: String(verifiedCharityCount), show: hasValue(verifiedCharityCount) },
+    { label: 'Live coins', value: String(launches.length), show: hasValue(launches.length) },
+    { label: 'Avg charity share', value: `${avgCharityShare}%`, show: hasValue(avgCharityShare) },
+  ].filter((stat) => stat.show);
 
   return (
-    <div className="space-y-12">
-      {/* Hero Section */}
-      <div className="relative rounded-3xl overflow-hidden p-8 sm:p-12 border border-slate-800/80 bg-gradient-to-br from-[#131929] via-[#0e1320] to-[#1a1226] text-left">
-        {/* Subtle background glow */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold mb-4">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Pump.fun Protocol Integration • Creator Fee Sharing</span>
-          </div>
-
-          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-            Memecoins that <br className="hidden sm:inline" />
-            <span className="bg-gradient-to-r from-amber-400 via-orange-400 to-pink-500 bg-clip-text text-transparent">
-              Actually Save Cats.
-            </span>
-          </h1>
-
-          <p className="mt-4 text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
-            Launch tokens on Pump.fun with automated, immutable creator fee splits directed to verified feline rescues. One-click bundling, zero rugs, verifiable on-chain impact.
-          </p>
-
-          <div className="mt-8 flex flex-wrap gap-4">
-            <button
-              onClick={openLaunchModal}
-              className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm flex items-center space-x-2 shadow-xl shadow-amber-500/20 transform active:scale-95 transition cursor-pointer"
-            >
-              <Rocket className="w-4 h-4 text-slate-950" />
-              <span>Launch a Cat Coin</span>
-            </button>
-
-            <a
-              href="#explore-grid"
-              className="px-6 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-slate-200 font-bold text-sm flex items-center space-x-2 transition"
-            >
-              <span>Explore Active Curves</span>
-            </a>
-          </div>
+    <div>
+      {/* ---------------------------------------------------------------- HERO */}
+      <section className="relative w-full overflow-hidden border-b border-line">
+        <div ref={videoWrapRef} className="absolute inset-0 will-change-transform">
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${BRAND.assets.heroPoster})` }}
+            aria-hidden="true"
+          />
+          <video
+            className="absolute inset-0 h-full w-full object-cover"
+            src={BRAND.assets.heroVideo}
+            poster={BRAND.assets.heroPoster}
+            autoPlay
+            loop
+            muted={muted}
+            playsInline
+            preload="metadata"
+            aria-hidden="true"
+          />
+          <div className="absolute inset-0 bg-black/65" />
         </div>
 
-        {/* Protocol Impact Banner */}
-        <div className="mt-10 pt-8 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-            <span className="text-xs text-slate-400 block font-mono">TOTAL DONATIONS</span>
-            <span className="text-xl sm:text-2xl font-black font-mono text-emerald-400">
-              {totalDonationsSol.toFixed(1)} SOL
-            </span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-            <span className="text-xs text-slate-400 block font-mono">VERIFIED RESCUES</span>
-            <span className="text-xl sm:text-2xl font-black font-mono text-pink-400">
-              {verifiedCharityCount} Shelters
-            </span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-            <span className="text-xs text-slate-400 block font-mono">ACTIVE TOKENS</span>
-            <span className="text-xl sm:text-2xl font-black font-mono text-amber-400">
-              {totalTokens} Memecoins
-            </span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-            <span className="text-xs text-slate-400 block font-mono">FEE ENFORCEMENT</span>
-            <span className="text-sm sm:text-base font-bold text-slate-200 flex items-center space-x-1 mt-1">
-              <Lock className="w-4 h-4 text-emerald-400" />
-              <span>Immutable PDA</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Explore Section: Search & Filters */}
-      <div id="explore-grid" className="space-y-6 text-left">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-white">Explore Bonding Curves</h2>
-            <p className="text-xs text-slate-400">Live tokens funding feline shelters on Solana</p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Search Input */}
-            <div className="relative flex-1 sm:w-64">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                placeholder="Search name, ticker, or mint..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none transition"
-              />
+        <div className="relative mx-auto flex min-h-[88svh] w-full max-w-7xl flex-col justify-between px-5 pb-10 pt-16 lg:px-8 lg:pt-20">
+          <div className="flex flex-1 flex-col justify-center">
+            <div className="hero-fade mb-6">
+              <SectionLabel>01 / Memecoins for cat rescues</SectionLabel>
             </div>
 
-            {/* Charity Filter Dropdown */}
-            <select
-              value={selectedCharityFilter}
-              onChange={(e) => setSelectedCharityFilter(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 focus:border-amber-400 outline-none"
-            >
-              <option value="all">All Charities</option>
-              {charities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <h1 className="max-w-4xl font-grotesk text-[clamp(2.9rem,9vw,7.5rem)] font-bold leading-[0.92] tracking-[-0.045em] text-white">
+              <span className="hero-line block">Meme coins</span>
+              <span className="hero-line hero-line-2 block">that save</span>
+              <span className="hero-line hero-line-3 block text-accent">cats.</span>
+            </h1>
+
+            <p className="hero-fade mt-7 max-w-xl text-sm leading-relaxed text-white/70 sm:text-base">
+              Launch on Pump.fun and route a fixed cut of creator fees to a verified feline rescue.
+              Immutable on-chain, not a promise.
+            </p>
+
+            <div className="hero-fade mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={openLaunchModal}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-black transition hover:bg-accent-hover"
+              >
+                Launch a coin
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              <a
+                href="#live-coins"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/25 px-6 py-3 text-sm font-medium text-white transition hover:border-white hover:bg-white/5"
+              >
+                Explore live coins
+              </a>
+            </div>
+          </div>
+
+          <div className="mt-12 flex items-end justify-between">
+            <div className="hidden items-center gap-3 font-mono text-[10px] uppercase tracking-[0.24em] text-white/50 sm:flex">
+              <span className="h-8 w-px bg-white/25" />
+              <span className="scroll-hint inline-block">Scroll</span>
+            </div>
+
+            <div className="relative hidden lg:block">
+              <img
+                ref={coinRef}
+                src={BRAND.assets.coin}
+                alt=""
+                aria-hidden="true"
+                className="coin-float h-40 w-40 drop-shadow-[0_20px_60px_rgba(0,0,0,0.55)] xl:h-48 xl:w-48"
+              />
+            </div>
           </div>
         </div>
+      </section>
 
-        {/* Filter Pills */}
-        <div className="flex flex-wrap gap-2 text-xs">
-          <button
-            onClick={() => setFilterType('all')}
-            className={`px-3.5 py-1.5 rounded-lg font-semibold transition ${
-              filterType === 'all'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            All Coins
-          </button>
-          <button
-            onClick={() => setFilterType('featured')}
-            className={`px-3.5 py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition ${
-              filterType === 'featured'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5" />
-            <span>Featured</span>
-          </button>
-          <button
-            onClick={() => setFilterType('top_bps')}
-            className={`px-3.5 py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition ${
-              filterType === 'top_bps'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Heart className="w-3.5 h-3.5 text-pink-400" />
-            <span>Top Charity % (BPS)</span>
-          </button>
-          <button
-            onClick={() => setFilterType('market_cap')}
-            className={`px-3.5 py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition ${
-              filterType === 'market_cap'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Highest Market Cap</span>
-          </button>
-          <button
-            onClick={() => setFilterType('newest')}
-            className={`px-3.5 py-1.5 rounded-lg font-semibold transition ${
-              filterType === 'newest'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            Newest Launches
-          </button>
-        </div>
+      {/* --------------------------------------------------------------- STATS */}
+      {stats.length > 0 && (
+        <section className="border-b border-line">
+          <div className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-x-6 gap-y-8 px-5 py-10 sm:grid-cols-4 lg:px-8">
+            {stats.map((stat) => (
+              <div key={stat.label}>
+                <SectionLabel className="tracking-[0.16em]">{stat.label}</SectionLabel>
+                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">{stat.value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-        {/* Token Grid */}
-        {filteredLaunches.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filteredLaunches.map((launch) => {
-              const charity = charities.find((c) => c.id === launch.charity_id);
-              return (
+      {/* ----------------------------------------------------------- LIVE COINS */}
+      <section id="live-coins" className="mx-auto w-full max-w-7xl scroll-mt-20 px-5 py-16 lg:px-8">
+        <Reveal>
+          <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
+            <div>
+              <SectionLabel>02 / Live coins</SectionLabel>
+              <h2 className="mt-3 text-3xl font-bold tracking-[-0.03em] text-white sm:text-4xl">
+                On the curve right now
+              </h2>
+              <p className="mt-2 max-w-lg text-sm text-muted">
+                Every coin below has a locked creator fee split pointing at a verified shelter wallet.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={openLaunchModal}
+              className="hidden items-center gap-2 self-start rounded-lg border border-line-strong px-4 py-2.5 text-sm text-white transition hover:border-white hover:bg-white/5 md:inline-flex"
+            >
+              Start a launch
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+          </div>
+        </Reveal>
+
+        <Reveal delay={80}>
+          <div className="mt-8 flex flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search name, ticker or mint"
+                  aria-label="Search coins"
+                  className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen((prev) => !prev)}
+                  aria-expanded={filtersOpen}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2.5 text-sm text-muted transition hover:border-line-strong hover:text-white sm:hidden"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filters
+                </button>
+
+                <select
+                  value={charityFilter}
+                  onChange={(e) => setCharityFilter(e.target.value)}
+                  aria-label="Filter by shelter"
+                  className="rounded-lg border border-line bg-card px-3 py-2.5 text-sm text-white focus:border-accent focus:outline-none"
+                >
+                  <option value="all">All shelters</option>
+                  {charities.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className={`${filtersOpen ? 'flex' : 'hidden'} flex-wrap items-center gap-5 sm:flex`}>
+              {FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  onClick={() => setFilterType(filter.id)}
+                  className={`relative pb-1 text-sm transition ${
+                    filterType === filter.id ? 'text-white' : 'text-muted hover:text-white'
+                  }`}
+                >
+                  {filter.label}
+                  {filterType === filter.id && (
+                    <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" aria-hidden="true" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+
+        <div className="mt-8">
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <TokenCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : filteredLaunches.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredLaunches.map((launch) => (
                 <TokenCard
                   key={launch.id}
                   launch={launch}
-                  charity={charity}
+                  charity={charities.find((c) => c.id === launch.charity_id)}
                   onSelect={onSelectToken}
                 />
-              );
-            })}
-          </div>
-        ) : (
-          <div className="py-16 text-center rounded-2xl bg-slate-900/50 border border-slate-800">
-            <Coins className="w-10 h-10 text-slate-500 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-white">No Memecoins Found</h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-              No coins matched your search criteria. Be the first to launch a token for this charity!
-            </p>
-            <button
-              onClick={openLaunchModal}
-              className="mt-4 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
-            >
-              Launch First Coin
-            </button>
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<Coins className="h-6 w-6" />}
+              title={launches.length === 0 ? 'No coins launched yet' : 'Nothing matches those filters'}
+              copy={
+                launches.length === 0
+                  ? 'Be the first to launch a coin that funds a cat rescue.'
+                  : 'Try a different shelter or clear the search.'
+              }
+              actionLabel={launches.length === 0 ? 'Launch the first coin' : undefined}
+              onAction={launches.length === 0 ? openLaunchModal : undefined}
+            />
+          )}
+        </div>
+      </section>
     </div>
   );
 };

@@ -1,3 +1,12 @@
+export type Tab =
+  | 'explore'
+  | 'launch'
+  | 'charities'
+  | 'admin'
+  | 'terms'
+  | 'privacy'
+  | 'risk';
+
 export interface Charity {
   id: string;
   name: string;

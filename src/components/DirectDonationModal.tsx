@@ -1,15 +1,11 @@
 import React, { useState } from 'react';
+import { CheckCircle2, ExternalLink, HeartHandshake, ShieldCheck, X } from 'lucide-react';
 import { useWallet } from '../context/WalletContext.tsx';
+import { useToast } from '../context/ToastContext.tsx';
 import { Charity } from '../types.ts';
-import { 
-  X, 
-  Heart, 
-  ShieldCheck, 
-  Coins, 
-  CheckCircle2, 
-  AlertCircle, 
-  ExternalLink 
-} from 'lucide-react';
+import { DEVNET_WALLET_ENABLED } from '../lib/brand.ts';
+import { shortAddress } from '../lib/format.ts';
+import { Spinner } from './ui/Primitives.tsx';
 
 interface DirectDonationModalProps {
   charity: Charity | null;
@@ -24,7 +20,8 @@ export const DirectDonationModal: React.FC<DirectDonationModalProps> = ({
   onClose,
   onDonationSuccess,
 }) => {
-  const { connected, balanceSol, sendDirectSolDonation, connectBrowserWallet, generateTestWallet } = useWallet();
+  const { connected, balanceSol, sendDirectSolDonation, generateTestWallet } = useWallet();
+  const { toast } = useToast();
 
   const [amount, setAmount] = useState<number>(0.25);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,13 +31,8 @@ export const DirectDonationModal: React.FC<DirectDonationModalProps> = ({
   if (!isOpen || !charity) return null;
 
   const handleDonate = async () => {
-    if (!connected) {
-      setErrorText('Please connect your Solana wallet first');
-      return;
-    }
-
     if (amount <= 0) {
-      setErrorText('Please enter a valid donation amount in SOL');
+      setErrorText('Enter a donation amount above zero.');
       return;
     }
 
@@ -50,162 +42,162 @@ export const DirectDonationModal: React.FC<DirectDonationModalProps> = ({
 
       const signature = await sendDirectSolDonation(charity.wallet_address, amount);
 
-      // Record on server
       await fetch('/api/donations/record', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          charityId: charity.id,
-          amountSol: amount,
-          txSignature: signature,
-        }),
+        body: JSON.stringify({ charityId: charity.id, amountSol: amount, txSignature: signature }),
       });
 
       setSuccessTx(signature);
       onDonationSuccess(amount);
+      toast(`Donated ${amount} SOL to ${charity.name}`, 'success');
     } catch (err: any) {
-      setErrorText(err.message || 'Donation transaction failed');
+      const message = err?.message || 'The donation transaction failed';
+      setErrorText(message);
+      toast(message, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="w-full max-w-md bg-[#111624] border border-slate-700/80 rounded-3xl p-6 shadow-2xl relative text-left">
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
-        >
-          <X className="w-5 h-5" />
-        </button>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-xl border border-line bg-card p-6">
+        <div className="mb-5 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <img src={charity.avatar_url} alt="" className="h-10 w-10 rounded-lg border border-line object-cover" />
+            <div>
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                Donate to {charity.name}
+                <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+              </h2>
+              <p className="font-mono text-[10px] text-muted">{shortAddress(charity.wallet_address, 5)}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1.5 text-muted transition hover:bg-white/5 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
         {!successTx ? (
-          <div>
-            <div className="flex items-center space-x-3 mb-4">
-              <img
-                src={charity.avatar_url}
-                alt=""
-                className="w-12 h-12 rounded-2xl object-cover border border-pink-500/30"
-              />
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center space-x-1.5">
-                  <span>Donate to {charity.name}</span>
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                </h3>
-                <span className="text-xs text-slate-400 font-mono">
-                  {charity.wallet_address.slice(0, 6)}...{charity.wallet_address.slice(-6)}
-                </span>
-              </div>
-            </div>
-
+          <>
             {errorText && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{errorText}</span>
-              </div>
+              <p className="mb-4 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-white">
+                {errorText}
+              </p>
             )}
 
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 mb-4">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">Donation Amount (SOL)</span>
-                <span className="text-slate-400 font-mono">Balance: {balanceSol} SOL</span>
+            <div className="rounded-lg border border-line bg-surface px-4 py-4">
+              <div className="flex items-center justify-between text-xs">
+                <label htmlFor="donation-amount" className="text-muted">
+                  Amount
+                </label>
+                <span className="font-mono text-[10px] text-muted">Balance {balanceSol.toFixed(4)} SOL</span>
               </div>
 
-              <div className="relative">
+              <div className="relative mt-2">
                 <input
+                  id="donation-amount"
                   type="number"
                   step="0.05"
                   min="0.01"
                   value={amount || ''}
                   onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full pl-3.5 pr-14 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-base font-mono font-bold text-white outline-none focus:border-pink-500"
+                  className="w-full rounded-lg border border-line bg-black px-3 py-3 pr-14 font-mono text-lg text-white focus:border-accent focus:outline-none"
                 />
-                <span className="absolute right-3.5 top-2.5 text-xs font-mono text-slate-400">SOL</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted">SOL</span>
               </div>
 
-              {/* Quick preset buttons */}
-              <div className="flex gap-2 pt-1">
-                {[0.1, 0.25, 0.5, 1.0].map((preset) => (
+              <div className="mt-3 flex gap-2">
+                {[0.1, 0.25, 0.5, 1].map((preset) => (
                   <button
                     key={preset}
                     type="button"
                     onClick={() => setAmount(preset)}
-                    className={`flex-1 py-1 rounded-lg text-xs font-mono font-bold transition ${
-                      amount === preset
-                        ? 'bg-pink-500 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:text-white'
+                    className={`flex-1 rounded-md border px-2 py-1 font-mono text-[11px] transition ${
+                      amount === preset ? 'border-accent text-accent' : 'border-line text-muted hover:text-white'
                     }`}
                   >
-                    {preset} SOL
+                    {preset}
                   </button>
                 ))}
               </div>
             </div>
 
             {!connected ? (
-              <div className="space-y-2">
-                <p className="text-xs text-slate-400 text-center mb-2">Connect wallet to send donation:</p>
+              <div className="mt-4 space-y-2">
+                <p className="text-xs text-muted">Connect a wallet to send this donation.</p>
                 <div className="flex gap-2">
                   <button
-                    onClick={connectBrowserWallet}
-                    className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 rounded-lg bg-accent px-3 py-2.5 text-xs font-semibold text-black transition hover:bg-accent-hover"
                   >
-                    Phantom / Solflare
+                    Connect from the nav
                   </button>
-                  <button
-                    onClick={generateTestWallet}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
-                  >
-                    Instant Test Wallet
-                  </button>
+                  {DEVNET_WALLET_ENABLED && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await generateTestWallet();
+                        toast('Devnet test wallet ready', 'success');
+                      }}
+                      className="flex-1 rounded-lg border border-line px-3 py-2.5 text-xs text-white transition hover:border-line-strong"
+                    >
+                      Devnet wallet
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
               <button
+                type="button"
                 onClick={handleDonate}
                 disabled={isSubmitting}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 text-white font-bold text-sm flex items-center justify-center space-x-2 shadow-lg shadow-pink-500/20 disabled:opacity-50 transition cursor-pointer"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-black transition hover:bg-accent-hover disabled:opacity-50"
               >
-                <Heart className="w-4 h-4 fill-white" />
-                <span>{isSubmitting ? 'Confirming On-Chain...' : `Donate ${amount} SOL`}</span>
+                {isSubmitting ? <Spinner className="h-4 w-4 border-black border-t-transparent" /> : <HeartHandshake className="h-4 w-4" />}
+                {isSubmitting ? 'Confirming...' : `Donate ${amount} SOL`}
               </button>
             )}
-          </div>
+
+            <p className="mt-3 text-[11px] leading-relaxed text-muted">
+              Sent straight to the shelter's wallet. CatPad never holds the funds.
+            </p>
+          </>
         ) : (
-          <div className="text-center py-4 space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/40">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
+          <div className="space-y-4 text-center">
+            <CheckCircle2 className="mx-auto h-9 w-9 text-accent" />
             <div>
-              <h3 className="text-lg font-bold text-white">Donation Confirmed!</h3>
-              <p className="text-xs text-slate-300 mt-1">
-                You sent <strong className="text-amber-400">{amount} SOL</strong> directly to {charity.name}.
+              <h3 className="text-base font-semibold text-white">Donation confirmed</h3>
+              <p className="mt-1 text-xs text-muted">
+                {amount} SOL sent directly to {charity.name}.
               </p>
             </div>
-
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-slate-400 truncate">
-              Tx: {successTx}
-            </div>
-
+            <p className="truncate rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[10px] text-muted">
+              {successTx}
+            </p>
             <a
-              href={`https://solscan.io/tx/${successTx}?cluster=devnet`}
+              href={`https://solscan.io/tx/${successTx}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center space-x-1.5 text-xs text-amber-400 hover:underline font-mono"
+              className="inline-flex items-center gap-1.5 text-xs text-muted transition hover:text-white"
             >
-              <span>View On Solscan</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              View on Solscan
+              <ExternalLink className="h-3.5 w-3.5" />
             </a>
-
-            <div>
-              <button
-                onClick={onClose}
-                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition"
-              >
-                Close
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-lg border border-line px-4 py-2.5 text-xs text-white transition hover:border-line-strong"
+            >
+              Close
+            </button>
           </div>
         )}
       </div>
