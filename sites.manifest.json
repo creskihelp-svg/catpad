@@ -1,0 +1,7 @@
+{
+  "entrypoint": "index.mjs",
+  "compatibilityDate": "2026-11-01",
+  "modules": [{ "name": "index.mjs", "type": "esm", "path": "./worker-dist/index.mjs" }],
+  "assetsDirectory": "./dist",
+  "spa": true
+}

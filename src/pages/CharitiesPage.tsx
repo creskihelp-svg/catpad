@@ -90,7 +90,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
         <button
           type="button"
           onClick={openLaunchModal}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:bg-accent-hover"
+          className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:bg-accent-hover"
         >
           Launch for a shelter
           <ArrowUpRight className="h-4 w-4" />
