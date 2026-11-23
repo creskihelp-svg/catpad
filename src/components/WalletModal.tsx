@@ -77,7 +77,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Wallet"
@@ -89,7 +89,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
               <WalletIcon className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-base font-semibold text-white">
+              <h2 className="text-base font-semibold text-ink">
                 {connected ? 'Wallet connected' : 'Connect a wallet'}
               </h2>
               <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
@@ -101,7 +101,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
             type="button"
             onClick={onClose}
             aria-label="Close wallet dialog"
-            className="rounded-md p-1.5 text-muted transition hover:bg-white/5 hover:text-white"
+            className="rounded-md p-1.5 text-muted transition hover:bg-black/5 hover:text-ink"
           >
             <X className="h-4 w-4" />
           </button>
@@ -123,8 +123,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                     className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 transition hover:border-line-strong hover:bg-card-hover"
                   >
                     <span className="flex items-center gap-3">
-                      <WalletLogo id={wallet.id} className="h-6 w-6 text-white" />
-                      <span className="text-sm font-medium text-white">{wallet.name}</span>
+                      <WalletLogo id={wallet.id} className="h-6 w-6 text-ink" />
+                      <span className="text-sm font-medium text-ink">{wallet.name}</span>
                     </span>
                     <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
                       <Download className="h-3 w-3" />
@@ -143,8 +143,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                   className="flex w-full items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-left transition hover:border-accent hover:bg-card-hover disabled:opacity-60"
                 >
                   <span className="flex items-center gap-3">
-                    <WalletLogo id={wallet.id} className="h-6 w-6 text-white" />
-                    <span className="text-sm font-medium text-white">{wallet.name}</span>
+                    <WalletLogo id={wallet.id} className="h-6 w-6 text-ink" />
+                    <span className="text-sm font-medium text-ink">{wallet.name}</span>
                   </span>
                   {busy ? (
                     <Spinner />
@@ -174,7 +174,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                   }}
                   className="flex w-full items-center justify-between rounded-lg border border-dashed border-line-strong px-4 py-3 text-left transition hover:border-accent"
                 >
-                  <span className="text-sm text-white">Generate devnet test wallet</span>
+                  <span className="text-sm text-ink">Generate devnet test wallet</span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
                     Local only
                   </span>
@@ -196,7 +196,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="flex items-center gap-1.5 font-mono text-xs text-white transition hover:text-accent"
+                  className="flex items-center gap-1.5 font-mono text-xs text-ink transition hover:text-accent"
                 >
                   {shortAddress(publicKeyString, 5)}
                   {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
@@ -207,7 +207,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                 <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
                   Balance
                 </span>
-                <span className="font-mono text-lg font-medium text-white">
+                <span className="font-mono text-lg font-medium text-ink">
                   {balanceSol.toFixed(4)} <span className="text-xs text-muted">SOL</span>
                 </span>
               </div>
@@ -225,7 +225,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                 type="button"
                 onClick={handleAirdrop}
                 disabled={airdropLoading}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-white transition hover:border-line-strong hover:bg-card-hover disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:border-line-strong hover:bg-card-hover disabled:opacity-60"
               >
                 <Coins className="h-4 w-4 text-accent" />
                 {airdropLoading ? 'Requesting SOL...' : 'Request 1 devnet SOL'}
@@ -236,7 +236,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
               href={`https://solscan.io/account/${publicKeyString}?cluster=${network === 'mainnet-beta' ? 'mainnet' : 'devnet'}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-white transition hover:border-line-strong hover:bg-card-hover"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:border-line-strong hover:bg-card-hover"
             >
               View on Solscan
               <ExternalLink className="h-3.5 w-3.5 text-muted" />

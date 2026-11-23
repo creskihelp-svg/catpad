@@ -113,13 +113,13 @@ export const EmptyState: React.FC<{
 }> = ({ icon, title, copy, actionLabel, onAction }) => (
   <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong px-6 py-16 text-center">
     <div className="mb-4 text-muted">{icon}</div>
-    <h3 className="text-base font-semibold text-white">{title}</h3>
+    <h3 className="text-base font-semibold text-ink">{title}</h3>
     <p className="mt-1 max-w-sm text-sm text-muted">{copy}</p>
     {actionLabel && onAction && (
       <button
         type="button"
         onClick={onAction}
-        className="mt-6 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:bg-accent-hover"
+        className="mt-6 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-page transition hover:bg-accent-hover"
       >
         {actionLabel}
         <ArrowRight className="h-4 w-4" />

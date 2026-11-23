@@ -9,7 +9,7 @@ interface NotFoundPageProps {
 export const NotFoundPage: React.FC<NotFoundPageProps> = ({ onGoHome }) => (
   <div className="mx-auto flex min-h-[62svh] w-full max-w-3xl flex-col justify-center px-5 py-20 lg:px-8">
     <SectionLabel>404 / Off the curve</SectionLabel>
-    <h1 className="mt-4 text-[clamp(3rem,12vw,7rem)] font-bold leading-[0.9] tracking-[-0.05em] text-white">
+    <h1 className="mt-4 text-[clamp(3rem,12vw,7rem)] font-bold leading-[0.9] tracking-[-0.05em] text-ink">
       This page
       <br />
       went <span className="text-accent">feral.</span>
@@ -22,7 +22,7 @@ export const NotFoundPage: React.FC<NotFoundPageProps> = ({ onGoHome }) => (
       <button
         type="button"
         onClick={onGoHome}
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-accent-hover"
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-page transition hover:bg-accent-hover"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to the launchpad

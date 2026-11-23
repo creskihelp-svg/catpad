@@ -2,13 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Coins, Search, SlidersHorizontal } from 'lucide-react';
 import { Launch, Charity } from '../types.ts';
 import { TokenCard } from '../components/TokenCard.tsx';
+import { PetTheCat } from '../components/PetTheCat.tsx';
 import {
   EmptyState,
   Reveal,
   SectionLabel,
   TokenCardSkeleton,
 } from '../components/ui/Primitives.tsx';
-import { useSound } from '../context/SoundContext.tsx';
 import { BRAND } from '../lib/brand.ts';
 import { hasValue } from '../lib/format.ts';
 
@@ -36,7 +36,6 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
   onSelectToken,
   openLaunchModal,
 }) => {
-  const { muted } = useSound();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('newest');
   const [charityFilter, setCharityFilter] = useState<string>('all');
@@ -93,7 +92,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
     })
     .sort((a, b) => {
       if (filterType === 'top_bps') return b.donation_bps - a.donation_bps;
-      if (filterType === 'market_cap') return Number(b.market_cap_sol) - Number(a.market_cap_sol);
+      if (filterType === 'market_cap') return (b.market_cap_sol ?? -1) - (a.market_cap_sol ?? -1);
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
@@ -120,12 +119,12 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
             poster={BRAND.assets.heroPoster}
             autoPlay
             loop
-            muted={muted}
+            muted
             playsInline
             preload="metadata"
             aria-hidden="true"
           />
-          <div className="absolute inset-0 bg-black/65" />
+          <div className="absolute inset-0 bg-page/80" />
         </div>
 
         <div className="relative mx-auto flex min-h-[88svh] w-full max-w-7xl flex-col justify-between px-5 pb-10 pt-16 lg:px-8 lg:pt-20">
@@ -134,13 +133,13 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
               <SectionLabel>01 / Memecoins for cat rescues</SectionLabel>
             </div>
 
-            <h1 className="max-w-4xl font-grotesk text-[clamp(2.9rem,9vw,7.5rem)] font-bold leading-[0.92] tracking-[-0.045em] text-white">
+            <h1 className="max-w-4xl font-grotesk text-[clamp(2.9rem,9vw,7.5rem)] font-bold leading-[0.92] tracking-[-0.045em] text-ink">
               <span className="hero-line block">Meme coins</span>
               <span className="hero-line hero-line-2 block">that save</span>
-              <span className="hero-line hero-line-3 block text-accent">cats.</span>
+              <span className="hero-line hero-line-3 block">cats.</span>
             </h1>
 
-            <p className="hero-fade mt-7 max-w-xl text-sm leading-relaxed text-white/70 sm:text-base">
+            <p className="hero-fade mt-7 max-w-xl text-sm leading-relaxed text-ink/70 sm:text-base">
               Launch on Pump.fun and route a fixed cut of creator fees to a verified feline rescue.
               Immutable on-chain, not a promise.
             </p>
@@ -149,14 +148,14 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
               <button
                 type="button"
                 onClick={openLaunchModal}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-black transition hover:bg-accent-hover"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-page transition hover:bg-accent-hover"
               >
                 Launch a coin
                 <ArrowRight className="h-4 w-4" />
               </button>
               <a
                 href="#live-coins"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/25 px-6 py-3 text-sm font-medium text-white transition hover:border-white hover:bg-white/5"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-ink/25 px-6 py-3 text-sm font-medium text-ink transition hover:border-ink hover:bg-ink/5"
               >
                 Explore live coins
               </a>
@@ -164,8 +163,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
           </div>
 
           <div className="mt-12 flex items-end justify-between">
-            <div className="hidden items-center gap-3 font-mono text-[10px] uppercase tracking-[0.24em] text-white/50 sm:flex">
-              <span className="h-8 w-px bg-white/25" />
+            <div className="hidden items-center gap-3 font-mono text-[10px] uppercase tracking-[0.24em] text-muted sm:flex">
+              <span className="h-8 w-px bg-line-strong" />
               <span className="scroll-hint inline-block">Scroll</span>
             </div>
 
@@ -175,12 +174,14 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                 src={BRAND.assets.coin}
                 alt=""
                 aria-hidden="true"
-                className="coin-float h-40 w-40 drop-shadow-[0_20px_60px_rgba(0,0,0,0.55)] xl:h-48 xl:w-48"
+                className="coin-float h-40 w-40 drop-shadow-[0_18px_50px_rgba(10,10,10,0.22)] xl:h-48 xl:w-48"
               />
             </div>
           </div>
         </div>
       </section>
+
+      <PetTheCat />
 
       {/* --------------------------------------------------------------- STATS */}
       {stats.length > 0 && (
@@ -189,7 +190,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
             {stats.map((stat) => (
               <div key={stat.label}>
                 <SectionLabel className="tracking-[0.16em]">{stat.label}</SectionLabel>
-                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">{stat.value}</p>
+                <p className="mt-2 font-mono text-2xl text-ink sm:text-3xl">{stat.value}</p>
               </div>
             ))}
           </div>
@@ -201,8 +202,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
         <Reveal>
           <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
             <div>
-              <SectionLabel>02 / Live coins</SectionLabel>
-              <h2 className="mt-3 text-3xl font-bold tracking-[-0.03em] text-white sm:text-4xl">
+              <SectionLabel>03 / Live coins</SectionLabel>
+              <h2 className="mt-3 text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl">
                 On the curve right now
               </h2>
               <p className="mt-2 max-w-lg text-sm text-muted">
@@ -213,7 +214,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
             <button
               type="button"
               onClick={openLaunchModal}
-              className="hidden items-center gap-2 self-start rounded-lg border border-line-strong px-4 py-2.5 text-sm text-white transition hover:border-white hover:bg-white/5 md:inline-flex"
+              className="hidden items-center gap-2 self-start rounded-lg border border-line-strong px-4 py-2.5 text-sm text-ink transition hover:border-ink hover:bg-black/5 md:inline-flex"
             >
               Start a launch
               <ArrowUpRight className="h-4 w-4" />
@@ -232,7 +233,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search name, ticker or mint"
                   aria-label="Search coins"
-                  className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                  className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                 />
               </div>
 
@@ -241,7 +242,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                   type="button"
                   onClick={() => setFiltersOpen((prev) => !prev)}
                   aria-expanded={filtersOpen}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2.5 text-sm text-muted transition hover:border-line-strong hover:text-white sm:hidden"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2.5 text-sm text-muted transition hover:border-line-strong hover:text-ink sm:hidden"
                 >
                   <SlidersHorizontal className="h-4 w-4" />
                   Filters
@@ -251,7 +252,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                   value={charityFilter}
                   onChange={(e) => setCharityFilter(e.target.value)}
                   aria-label="Filter by shelter"
-                  className="rounded-lg border border-line bg-card px-3 py-2.5 text-sm text-white focus:border-accent focus:outline-none"
+                  className="rounded-lg border border-line bg-card px-3 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
                 >
                   <option value="all">All shelters</option>
                   {charities.map((c) => (
@@ -270,7 +271,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                   type="button"
                   onClick={() => setFilterType(filter.id)}
                   className={`relative pb-1 text-sm transition ${
-                    filterType === filter.id ? 'text-white' : 'text-muted hover:text-white'
+                    filterType === filter.id ? 'text-ink' : 'text-muted hover:text-ink'
                   }`}
                 >
                   {filter.label}

@@ -11,6 +11,7 @@ import { Navbar } from './components/Navbar.tsx';
 import { Footer } from './components/Footer.tsx';
 import { ExplorePage } from './pages/ExplorePage.tsx';
 import { CharitiesPage } from './pages/CharitiesPage.tsx';
+import { TransparencyPage } from './pages/TransparencyPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
 import { LegalPage } from './pages/LegalPage.tsx';
 import { NotFoundPage } from './pages/NotFoundPage.tsx';
@@ -24,6 +25,7 @@ const PATH_TO_TAB: Record<string, Tab> = {
   '/coins': 'explore',
   '/shelters': 'charities',
   '/charities': 'charities',
+  '/transparency': 'transparency',
   '/admin': 'admin',
   '/terms': 'terms',
   '/privacy': 'privacy',
@@ -34,16 +36,23 @@ const TAB_TO_PATH: Record<Tab, string> = {
   explore: '/',
   launch: '/',
   charities: '/shelters',
+  transparency: '/transparency',
   admin: '/admin',
   terms: '/terms',
   privacy: '/privacy',
   risk: '/risk',
 };
 
-const readRoute = (): { tab: Tab; notFound: boolean } => {
+const readRoute = (): { tab: Tab; notFound: boolean; coinMint: string | null } => {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
+
+  // /coin/<mint> is a real, shareable page for one coin; the worker serves it
+  // with its own title and social tags for crawlers.
+  const coin = path.match(/^\/coin\/([1-9A-HJ-NP-Za-km-z]{32,44})$/);
+  if (coin) return { tab: 'explore', notFound: false, coinMint: coin[1] };
+
   const tab = PATH_TO_TAB[path];
-  return tab ? { tab, notFound: false } : { tab: 'explore', notFound: true };
+  return tab ? { tab, notFound: false, coinMint: null } : { tab: 'explore', notFound: true, coinMint: null };
 };
 
 export function AppContent() {
@@ -51,6 +60,7 @@ export function AppContent() {
 
   const [currentTab, setCurrentTab] = useState<Tab>(initialRoute.tab);
   const [notFound, setNotFound] = useState(initialRoute.notFound);
+  const [coinMint, setCoinMint] = useState<string | null>(initialRoute.coinMint);
   const [launches, setLaunches] = useState<Launch[]>([]);
   const [charities, setCharities] = useState<Charity[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
@@ -96,6 +106,7 @@ export function AppContent() {
     }
     setCurrentTab(tab);
     setNotFound(false);
+    setCoinMint(null);
     const path = TAB_TO_PATH[tab] || '/';
     if (window.location.pathname !== path) {
       window.history.pushState({ tab }, '', path);
@@ -107,6 +118,7 @@ export function AppContent() {
       const route = readRoute();
       setCurrentTab(route.tab);
       setNotFound(route.notFound);
+      setCoinMint(route.coinMint);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -129,6 +141,13 @@ export function AppContent() {
     }
   }, [launches]);
 
+  // Open the coin that a /coin/<mint> link points at once the data has loaded.
+  useEffect(() => {
+    if (!coinMint || isLoading) return;
+    const match = launches.find((l) => l.mint === coinMint);
+    if (match) setSelectedToken(match);
+  }, [coinMint, launches, isLoading]);
+
   const handleLaunchSuccess = (newLaunch: Launch) => {
     setLaunches((prev) => [newLaunch, ...prev]);
     fetchData();
@@ -139,7 +158,7 @@ export function AppContent() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-black text-white">
+    <div className="flex min-h-screen flex-col bg-page text-ink">
       <Navbar currentTab={currentTab} setCurrentTab={navigate} openLaunchModal={() => setIsLaunchModalOpen(true)} />
 
       <main className="flex-1">
@@ -165,6 +184,15 @@ export function AppContent() {
                 onOpenDonate={setSelectedCharityForDonate}
                 onSelectToken={setSelectedToken}
                 openLaunchModal={() => setIsLaunchModalOpen(true)}
+              />
+            )}
+
+            {currentTab === 'transparency' && (
+              <TransparencyPage
+                launches={launches}
+                charities={charities}
+                donations={donations}
+                isLoading={isLoading}
               />
             )}
 

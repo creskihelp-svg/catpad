@@ -103,11 +103,11 @@ export const LegalPage: React.FC<LegalPageProps> = ({ page }) => {
           {meta.icon}
           <SectionLabel>{meta.label}</SectionLabel>
         </div>
-        <h1 className="mt-3 text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl">{meta.title}</h1>
+        <h1 className="mt-3 text-4xl font-bold tracking-[-0.035em] text-ink sm:text-5xl">{meta.title}</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted">{meta.intro}</p>
       </Reveal>
 
-      <div className="mt-8 rounded-lg border border-line bg-card px-4 py-3 text-xs leading-relaxed text-white">
+      <div className="mt-8 rounded-lg border border-line bg-card px-4 py-3 text-xs leading-relaxed text-ink">
         <strong className="font-semibold">Risk warning.</strong> {BRAND.disclaimer} Tokens launched
         through CatPad are speculative digital assets on Solana and may lose 100% of their value.
       </div>
@@ -115,7 +115,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ page }) => {
       <div className="mt-10 space-y-8">
         {meta.sections.map((section) => (
           <Reveal key={section.title}>
-            <h2 className="text-base font-semibold text-white">{section.title}</h2>
+            <h2 className="text-base font-semibold text-ink">{section.title}</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">{section.body}</p>
           </Reveal>
         ))}

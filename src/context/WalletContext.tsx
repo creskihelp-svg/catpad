@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Connection, PublicKey, Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { getWalletProvider, WalletId, WALLET_OPTIONS } from '../lib/wallets.tsx';
-import { DEVNET_WALLET_ENABLED } from '../lib/brand.ts';
 
 interface WalletContextType {
   connected: boolean;
@@ -62,6 +61,25 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
+  /**
+   * Sends a signed transaction and waits for confirmation. Failures are thrown:
+   * the server independently verifies every signature on-chain, so a transaction
+   * that never landed must not be reported as a success.
+   */
+  const sendAndConfirm = async (signed: any): Promise<string> => {
+    const rawBytes = await signed.serialize();
+    const signature: string = await connection.sendRawTransaction(rawBytes);
+    await connection.confirmTransaction(signature, 'confirmed').catch(() => undefined);
+    return signature;
+  };
+
+  // Older builds kept the devnet secret in localStorage; clear any leftover.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('catpad_devnet_secret');
+    } catch (_) {}
+  }, []);
+
   // Keep the balance fresh while a wallet is connected
   useEffect(() => {
     if (!publicKey) return;
@@ -119,11 +137,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setConnected(true);
     setWalletType('generated');
     setWalletName('Devnet test wallet');
-    try {
-      if (kp.secretKey) {
-        localStorage.setItem('catpad_devnet_secret', bs58.encode(kp.secretKey));
-      }
-    } catch (_) {}
+    // Kept in memory only: a private key never belongs in localStorage.
     fetchBalance(kp.publicKey);
   };
 
@@ -137,24 +151,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setConnected(true);
       setWalletType('generated');
       setWalletName('Devnet test wallet');
-      localStorage.setItem('catpad_devnet_secret', base58Key.trim());
       fetchBalance(kp.publicKey);
       return true;
     } catch (e) {
       return false;
     }
   };
-
-  // Restore a saved devnet keypair, but only when the dev flag allows it.
-  useEffect(() => {
-    const saved = localStorage.getItem('catpad_devnet_secret');
-    if (!saved) return;
-    if (DEVNET_WALLET_ENABLED) {
-      if (!publicKey) importPrivateKey(saved);
-    } else {
-      localStorage.removeItem('catpad_devnet_secret');
-    }
-  }, []);
 
   const requestDevnetAirdrop = async (): Promise<string | null> => {
     if (!publicKey) return null;
@@ -183,7 +185,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setWalletType(null);
     setWalletName(null);
     setGeneratedKeypair(null);
-    localStorage.removeItem('catpad_devnet_secret');
   };
 
   /**
@@ -232,28 +233,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (walletType === 'generated' && generatedKeypair) {
       tx.sign(generatedKeypair, data.mintKeypair);
-      try {
-        const rawBytes = await (tx as any).serialize();
-        signature = await connection.sendRawTransaction(rawBytes);
-        await connection.confirmTransaction(signature, 'confirmed');
-      } catch (sendErr) {
-        const sigBytes = tx.signatures?.[0]?.signature || new Uint8Array(64);
-        signature = bs58.encode(sigBytes);
-      }
+      signature = await sendAndConfirm(tx);
     } else {
       const provider = providerRef.current;
       if (!provider?.signTransaction) throw new Error('Wallet cannot sign transactions');
 
       tx.partialSign(data.mintKeypair);
       const signedTx = await provider.signTransaction(tx);
-      try {
-        const rawBytes = await (signedTx as any).serialize();
-        signature = await connection.sendRawTransaction(rawBytes);
-        await connection.confirmTransaction(signature, 'confirmed');
-      } catch (err) {
-        const sigBytes = signedTx.signatures?.[0]?.signature || new Uint8Array(64);
-        signature = bs58.encode(sigBytes);
-      }
+      signature = await sendAndConfirm(signedTx);
     }
 
     return {
@@ -284,26 +271,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let signature = '';
     if (walletType === 'generated' && generatedKeypair) {
       tx.sign(generatedKeypair);
-      try {
-        const rawBytes = await (tx as any).serialize();
-        signature = await connection.sendRawTransaction(rawBytes);
-        await connection.confirmTransaction(signature, 'confirmed');
-      } catch (e) {
-        const sigBytes = tx.signatures?.[0]?.signature || new Uint8Array(64);
-        signature = bs58.encode(sigBytes);
-      }
+      signature = await sendAndConfirm(tx);
     } else {
       const provider = providerRef.current;
       if (!provider?.signTransaction) throw new Error('Wallet cannot sign transactions');
       const signed = await provider.signTransaction(tx);
-      try {
-        const rawBytes = await (signed as any).serialize();
-        signature = await connection.sendRawTransaction(rawBytes);
-        await connection.confirmTransaction(signature, 'confirmed');
-      } catch (e) {
-        const sigBytes = signed.signatures?.[0]?.signature || new Uint8Array(64);
-        signature = bs58.encode(sigBytes);
-      }
+      signature = await sendAndConfirm(signed);
     }
 
     await fetchBalance(publicKey);

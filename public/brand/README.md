@@ -5,7 +5,8 @@ them by path, so replacing a file is all that is needed.
 
 | File | Used for | Recommended |
 | --- | --- | --- |
-| `logo.svg` | Navigation brand mark (includes the wordmark) | SVG, ~220×48 |
+| `cat.svg` | Cat mark used in the navigation logo and the pet-the-cat section | SVG, square, transparent background |
+| `logo.svg` | Legacy brand mark with wordmark (superseded by `cat.svg` + live wordmark) | SVG, ~220×48 |
 | `coin.png` | Floating hero coin, coin image fallback | Square PNG with transparent background, 512×512 |
 | `hero.mp4` | Full-width hero background video | H.264 MP4, muted-friendly, 1920×1080, < 6 MB |
 | `hero-poster.png` | Hero poster / fallback frame while the video loads | 1600×900 |

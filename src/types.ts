@@ -2,6 +2,7 @@ export type Tab =
   | 'explore'
   | 'launch'
   | 'charities'
+  | 'transparency'
   | 'admin'
   | 'terms'
   | 'privacy'
@@ -38,9 +39,23 @@ export interface Launch {
   telegram?: string;
   website?: string;
   is_featured: boolean;
-  market_cap_sol: number;
-  bonding_curve_progress: number; // 0 to 100%
+  /** Null until a market data feed reports a real value — never invented. */
+  market_cap_sol: number | null;
+  /** 0 to 100%, or null when unknown. */
+  bonding_curve_progress: number | null;
   status: 'pending' | 'confirmed' | 'failed';
+  /** Hidden from the public directory by an admin. */
+  is_unlisted?: boolean;
+  /** Set when the launch transaction was verified against the Solana RPC. */
+  verified_at?: string | null;
+  created_at: string;
+}
+
+export interface AdminAction {
+  id: string;
+  action: string;
+  target: string;
+  details: string;
   created_at: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Charity, Launch, Donation, AdminSession } from '../types.ts';
+import { AdminAction, Charity, Launch, Donation } from '../types.ts';
 import { useToast } from '../context/ToastContext.tsx';
 import { 
   ShieldCheck, 
@@ -15,6 +15,8 @@ import {
   ExternalLink,
   LogOut,
   RefreshCw,
+  EyeOff,
+  History,
   X
 } from 'lucide-react';
 
@@ -36,16 +38,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [adminToken, setAdminToken] = useState<string>(() => {
     return localStorage.getItem('catpad_admin_token') || '';
   });
-  const [adminEmail, setAdminEmail] = useState('');
+  const [adminIdentifier, setAdminIdentifier] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Admin Sub-tab
-  const [adminTab, setAdminTab] = useState<'charities' | 'launches' | 'donations' | 'failures'>('charities');
+  const [adminTab, setAdminTab] = useState<'charities' | 'launches' | 'donations' | 'failures' | 'audit'>('charities');
 
   // Audit failures from server
   const [failures, setFailures] = useState<Array<{ id: string; type: string; details: string; timestamp: string }>>([]);
+
+  // Admin activity log, and every launch including hidden ones
+  const [auditActions, setAuditActions] = useState<AdminAction[]>([]);
+  const [adminLaunches, setAdminLaunches] = useState<Launch[] | null>(null);
 
   // Charity Add/Edit Modal
   const [showCharityModal, setShowCharityModal] = useState(false);
@@ -79,6 +85,25 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       .catch(() => {});
   }, [adminToken]);
 
+  // Load the admin-only launch list (hidden coins included) and the audit trail.
+  useEffect(() => {
+    if (!adminToken) return;
+    const headers = { Authorization: `Bearer ${adminToken}` };
+    fetch('/api/admin/audit', { headers })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.actions)) setAuditActions(data.actions);
+      })
+      .catch(() => {});
+
+    fetch('/api/admin/launches', { headers })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.launches)) setAdminLaunches(data.launches);
+      })
+      .catch(() => {});
+  }, [adminToken, launches]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -88,7 +113,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+        body: JSON.stringify({ identifier: adminIdentifier, password: adminPassword }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -110,6 +135,16 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     localStorage.removeItem('catpad_admin_token');
   };
 
+  /** Expired or forged sessions drop the token instead of looping on errors. */
+  const handleUnauthorized = (status: number) => {
+    if (status === 401 || status === 403) {
+      handleLogout();
+      toast('Your admin session ended. Please sign in again.', 'error');
+      return true;
+    }
+    return false;
+  };
+
   // Toggle Featured status
   const toggleFeatured = async (mint: string) => {
     try {
@@ -119,12 +154,39 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       });
       if (res.ok) {
         onRefreshData();
-      } else {
+      } else if (!handleUnauthorized(res.status)) {
         const d = await res.json();
         toast(d.error || 'Server error', 'error');
       }
     } catch (err) {
       toast('Failed to toggle featured status', 'error');
+    }
+  };
+
+  // Hide a coin from the public directory (or restore it)
+  const toggleUnlisted = async (launch: Launch) => {
+    try {
+      const res = await fetch(`/api/admin/launches/${launch.mint}/unlist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({ unlisted: !launch.is_unlisted }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminLaunches((prev) =>
+          prev ? prev.map((l) => (l.mint === launch.mint ? { ...l, is_unlisted: data.is_unlisted } : l)) : prev,
+        );
+        onRefreshData();
+        toast(data.is_unlisted ? 'Coin hidden from the directory' : 'Coin restored to the directory', 'success');
+      } else if (!handleUnauthorized(res.status)) {
+        const d = await res.json();
+        toast(d.error || 'Server error', 'error');
+      }
+    } catch (err) {
+      toast('Failed to update the launch visibility', 'error');
     }
   };
 
@@ -141,7 +203,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       });
       if (res.ok) {
         onRefreshData();
-      } else {
+      } else if (!handleUnauthorized(res.status)) {
         const d = await res.json();
         toast(d.error || 'Server error', 'error');
       }
@@ -160,7 +222,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       });
       if (res.ok) {
         onRefreshData();
-      } else {
+      } else if (!handleUnauthorized(res.status)) {
         const d = await res.json();
         toast(d.error || 'Server error', 'error');
       }
@@ -195,7 +257,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       });
 
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed to save charity');
+      if (!res.ok) {
+        if (handleUnauthorized(res.status)) {
+          setShowCharityModal(false);
+          return;
+        }
+        throw new Error(d.error || 'Failed to save charity');
+      }
 
       setShowCharityModal(false);
       setEditingCharity(null);
@@ -249,9 +317,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           <ShieldCheck className="w-6 h-6" />
         </div>
 
-        <h2 className="text-2xl font-semibold text-white">CatPad Admin Portal</h2>
+        <h2 className="text-2xl font-semibold text-ink">CatPad Admin Portal</h2>
         <p className="text-xs text-muted mt-1 mb-6">
-          Server-side role checked administration. Manage charities, view launches, and monitor on-chain donations.
+          Server-side role checked administration. Add shelters, view launches, and monitor on-chain donations.
         </p>
 
         {loginError && (
@@ -263,40 +331,41 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-muted block mb-1">
-              Admin Email / Identifier
+              Admin Identifier
             </label>
             <input
               type="text"
-              placeholder="admin@catpad.fun"
-              value={adminEmail}
-              onChange={(e) => setAdminEmail(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-line-strong text-sm text-white placeholder:text-muted focus:border-accent outline-none"
+              placeholder="stud.disc"
+              autoComplete="username"
+              value={adminIdentifier}
+              onChange={(e) => setAdminIdentifier(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-line-strong text-sm text-ink placeholder:text-muted focus:border-accent outline-none"
             />
           </div>
 
           <div>
             <label className="text-xs font-semibold text-muted block mb-1">
-              Admin Passphrase / Secret Key
+              Admin Password
             </label>
             <input
               type="password"
-              placeholder="Enter admin secret key"
+              autoComplete="current-password"
+              placeholder="Enter admin password"
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-line-strong text-sm text-white placeholder:text-muted focus:border-accent outline-none font-mono"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-line-strong text-sm text-ink placeholder:text-muted focus:border-accent outline-none font-mono"
             />
           </div>
 
-          {import.meta.env.DEV && (
-            <div className="p-3 rounded-xl bg-black border border-line text-[11px] text-muted leading-relaxed font-mono">
-              Default dev secret: <code className="text-accent">catpad-admin-key-2026</code>
-            </div>
-          )}
+          <div className="p-3 rounded-xl bg-page border border-line text-[11px] text-muted leading-relaxed">
+            Sign-in requires this deployment's admin identifier and password. Sessions last eight
+            hours; ask the site owner for the credentials.
+          </div>
 
           <button
             type="submit"
             disabled={isLoggingIn}
-            className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-black font-bold text-sm  transition disabled:opacity-50 cursor-pointer"
+            className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-page font-bold text-sm  transition disabled:opacity-50 cursor-pointer"
           >
             {isLoggingIn ? 'Verifying with Server...' : 'Access Admin Dashboard'}
           </button>
@@ -306,6 +375,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   }
 
   // AUTHENTICATED ADMIN DASHBOARD
+  const launchRows = adminLaunches ?? launches;
   const totalDonationAmount = donations.reduce((sum, d) => sum + Number(d.amount_sol), 0);
 
   return (
@@ -314,20 +384,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-xl bg-card border border-line">
         <div>
           <div className="flex items-center space-x-2">
-            <h1 className="text-2xl font-semibold text-white">CatPad Admin Dashboard</h1>
+            <h1 className="text-2xl font-semibold text-ink">CatPad Admin Dashboard</h1>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-mono border border-accent/40 font-bold">
               Server-Role Verified
             </span>
           </div>
           <p className="text-xs text-muted mt-1">
-            Manage partner charities, feature memecoins, review donation records, and inspect audit failures.
+            Add and edit partner shelters, feature memecoins, review donation records, and inspect audit failures.
           </p>
         </div>
 
         <div className="flex items-center space-x-2">
           <button
             onClick={onRefreshData}
-            className="p-2 rounded-xl bg-surface hover:bg-card-hover text-muted hover:text-white transition"
+            className="p-2 rounded-xl bg-surface hover:bg-card-hover text-muted hover:text-ink transition"
             title="Refresh Server State"
           >
             <RefreshCw className="w-4 h-4" />
@@ -351,11 +421,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         </div>
         <div className="p-4 rounded-lg bg-card border border-line">
           <span className="text-muted text-xs block font-mono">TOKEN LAUNCHES</span>
-          <span className="text-xl font-bold font-mono text-accent">{launches.length} Tokens</span>
+          <span className="text-xl font-bold font-mono text-accent">{launchRows.length} Tokens</span>
         </div>
         <div className="p-4 rounded-lg bg-card border border-line">
-          <span className="text-muted text-xs block font-mono">CHARITIES LISTED</span>
-          <span className="text-xl font-bold font-mono text-accent">{charities.length} Non-Profits</span>
+          <span className="text-muted text-xs block font-mono">SHELTERS LISTED</span>
+          <span className="text-xl font-bold font-mono text-accent">{charities.length} Shelters</span>
         </div>
         <div className="p-4 rounded-lg bg-card border border-line">
           <span className="text-muted text-xs block font-mono">AUDIT FAILURES</span>
@@ -368,23 +438,23 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         <button
           onClick={() => setAdminTab('charities')}
           className={`pb-3 transition ${
-            adminTab === 'charities' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-white'
+            adminTab === 'charities' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
           }`}
         >
-          Charities ({charities.length})
+          Shelters ({charities.length})
         </button>
         <button
           onClick={() => setAdminTab('launches')}
           className={`pb-3 transition ${
-            adminTab === 'launches' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-white'
+            adminTab === 'launches' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
           }`}
         >
-          Launches ({launches.length})
+          Launches ({launchRows.length})
         </button>
         <button
           onClick={() => setAdminTab('donations')}
           className={`pb-3 transition ${
-            adminTab === 'donations' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-white'
+            adminTab === 'donations' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
           }`}
         >
           Donations ({donations.length})
@@ -392,10 +462,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         <button
           onClick={() => setAdminTab('failures')}
           className={`pb-3 transition ${
-            adminTab === 'failures' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-white'
+            adminTab === 'failures' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
           }`}
         >
           Failures Log ({failures.length})
+        </button>
+        <button
+          onClick={() => setAdminTab('audit')}
+          className={`pb-3 transition ${
+            adminTab === 'audit' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
+          }`}
+        >
+          Admin Log ({auditActions.length})
         </button>
       </div>
 
@@ -403,13 +481,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       {adminTab === 'charities' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold text-white">Registered Rescues</h3>
+            <h3 className="text-lg font-bold text-ink">Registered shelters</h3>
             <button
               onClick={openAddCharity}
-              className="px-3.5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-black font-bold text-xs flex items-center space-x-1 transition cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-page font-bold text-xs flex items-center space-x-1 transition cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-black" />
-              <span>Add New Charity</span>
+              <Plus className="w-4 h-4 text-page" />
+              <span>Add shelter</span>
             </button>
           </div>
 
@@ -417,7 +495,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <table className="w-full text-xs text-left">
               <thead className="bg-surface text-muted uppercase font-mono border-b border-line">
                 <tr>
-                  <th className="py-3 px-4">Charity</th>
+                  <th className="py-3 px-4">Shelter</th>
                   <th className="py-3 px-4">Solana Wallet</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Total Raised</th>
@@ -431,7 +509,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       <div className="flex items-center space-x-2.5">
                         <img src={c.avatar_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
                         <div>
-                          <span className="font-bold text-white block">{c.name}</span>
+                          <span className="font-bold text-ink block">{c.name}</span>
                           <span className="text-[10px] text-muted">{c.ein_tax_id ? `EIN: ${c.ein_tax_id}` : c.website}</span>
                         </div>
                       </div>
@@ -457,7 +535,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     <td className="py-3 px-4 text-right space-x-2">
                       <button
                         onClick={() => openEditCharity(c)}
-                        className="p-1.5 rounded-lg bg-surface hover:bg-card-hover text-muted hover:text-white"
+                        className="p-1.5 rounded-lg bg-surface hover:bg-card-hover text-muted hover:text-ink"
                         title="Edit Charity"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -482,8 +560,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       {adminTab === 'launches' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold text-white">Launched Memecoins</h3>
-            <span className="text-xs text-muted font-mono">{launches.length} tokens active</span>
+            <h3 className="text-lg font-bold text-ink">Launched Memecoins</h3>
+            <span className="text-xs text-muted font-mono">{launchRows.length} tokens</span>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-line bg-card">
@@ -495,17 +573,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   <th className="py-3 px-4">Charity Share</th>
                   <th className="py-3 px-4">Bonding Curve</th>
                   <th className="py-3 px-4">Featured</th>
+                  <th className="py-3 px-4">Visibility</th>
                   <th className="py-3 px-4 text-right">Links</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {launches.map((l) => (
+                {launchRows.map((l) => (
                   <tr key={l.id} className="hover:bg-card-hover transition">
                     <td className="py-3 px-4">
                       <div className="flex items-center space-x-2.5">
                         <img src={l.image_url} alt="" className="w-7 h-7 rounded-lg object-cover" />
                         <div>
-                          <span className="font-bold text-white block">{l.name}</span>
+                          <span className="font-bold text-ink block">{l.name}</span>
                           <span className="text-[10px] font-mono text-accent">${l.symbol}</span>
                         </div>
                       </div>
@@ -517,7 +596,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       {l.donation_bps / 100}% ({l.donation_bps} BPS)
                     </td>
                     <td className="py-3 px-4 font-mono text-muted">
-                      {l.bonding_curve_progress.toFixed(1)}%
+                      {l.bonding_curve_progress === null ? '—' : `${l.bonding_curve_progress.toFixed(1)}%`}
                     </td>
                     <td className="py-3 px-4">
                       <button
@@ -530,6 +609,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       >
                         <Flame className="w-3 h-3" />
                         <span>{l.is_featured ? 'Featured' : 'Standard'}</span>
+                      </button>
+                    </td>
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => toggleUnlisted(l)}
+                        className={`px-2 py-1 rounded text-[10px] font-bold flex items-center space-x-1 ${
+                          l.is_unlisted
+                            ? 'bg-accent/10 text-accent border border-accent/40'
+                            : 'bg-surface text-muted'
+                        }`}
+                        title={l.is_unlisted ? 'Restore to the public directory' : 'Hide from the public directory'}
+                      >
+                        <EyeOff className="w-3 h-3" />
+                        <span>{l.is_unlisted ? 'Hidden' : 'Listed'}</span>
                       </button>
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -554,7 +647,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       {/* TAB 3: DONATIONS RECORD */}
       {adminTab === 'donations' && (
         <div className="space-y-4">
-          <h3 className="text-lg font-bold text-white">On-Chain Donation Records</h3>
+          <h3 className="text-lg font-bold text-ink">On-Chain Donation Records</h3>
           <div className="overflow-x-auto rounded-lg border border-line bg-card">
             <table className="w-full text-xs text-left">
               <thead className="bg-surface text-muted uppercase font-mono border-b border-line">
@@ -571,7 +664,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   const charity = charities.find((c) => c.id === d.charity_id);
                   return (
                     <tr key={d.id} className="hover:bg-card-hover transition">
-                      <td className="py-3 px-4 font-bold text-white">
+                      <td className="py-3 px-4 font-bold text-ink">
                         {charity?.name || 'Charity Wallet'}
                       </td>
                       <td className="py-3 px-4 font-mono font-bold text-accent">
@@ -597,11 +690,45 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         </div>
       )}
 
+      {/* TAB 5: ADMIN ACTIVITY */}
+      {adminTab === 'audit' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-ink flex items-center space-x-2">
+              <History className="w-4 h-4 text-accent" />
+              <span>Admin activity</span>
+            </h3>
+            <span className="text-xs text-muted font-mono">{auditActions.length} recent</span>
+          </div>
+
+          {auditActions.length > 0 ? (
+            <div className="space-y-2">
+              {auditActions.map((a) => (
+                <div key={a.id} className="p-3.5 rounded-xl bg-card border border-line text-xs">
+                  <div className="flex justify-between font-mono text-[11px] text-ink">
+                    <span>{a.action}</span>
+                    <span className="text-muted text-[10px]">{new Date(a.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="mt-1 text-muted">
+                    {a.details}
+                    <span className="ml-2 font-mono text-[10px] text-muted">{a.target}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center rounded-lg bg-surface border border-line text-muted text-xs">
+              No admin actions recorded yet.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 4: AUDIT FAILURES */}
       {adminTab === 'failures' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+            <h3 className="text-lg font-bold text-ink flex items-center space-x-2">
               <AlertTriangle className="w-4 h-4 text-accent" />
               <span>Failed Transaction Audit Log</span>
             </h3>
@@ -630,17 +757,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
       {/* CHARITY ADD/EDIT MODAL */}
       {showCharityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-md animate-fadeIn">
           <div className="w-full max-w-lg bg-card border border-line-strong rounded-xl p-6 shadow-2xl relative text-left">
             <button
               onClick={() => setShowCharityModal(false)}
-              className="absolute top-5 right-5 p-2 text-muted hover:text-white rounded-xl hover:bg-card-hover transition"
+              className="absolute top-5 right-5 p-2 text-muted hover:text-ink rounded-xl hover:bg-card-hover transition"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-lg font-bold text-white mb-4">
-              {editingCharity ? 'Edit Charity' : 'Add Verified Feline Charity'}
+            <h3 className="text-lg font-bold text-ink mb-4">
+              {editingCharity ? 'Edit shelter' : 'Add a cat shelter'}
             </h3>
 
             {charityFormError && (
@@ -651,13 +778,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
             <form onSubmit={handleSaveCharity} className="space-y-3.5 text-xs">
               <div>
-                <label className="font-semibold text-muted block mb-1">Charity Name *</label>
+                                  <label className="font-semibold text-muted block mb-1">Shelter name *</label>
                 <input
                   type="text"
                   placeholder="e.g. Austin Pets Alive!"
                   value={charityForm.name}
                   onChange={(e) => setCharityForm({ ...charityForm, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-white outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-ink outline-none"
                 />
               </div>
 
@@ -669,7 +796,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     placeholder="e.g. 12-3456789"
                     value={charityForm.ein_tax_id}
                     onChange={(e) => setCharityForm({ ...charityForm, ein_tax_id: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-white outline-none font-mono"
+                    className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-ink outline-none font-mono"
                   />
                 </div>
                 <div>
@@ -679,7 +806,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     placeholder="https://..."
                     value={charityForm.website}
                     onChange={(e) => setCharityForm({ ...charityForm, website: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-white outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-ink outline-none"
                   />
                 </div>
               </div>
@@ -691,7 +818,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   placeholder="Public key (Base58)..."
                   value={charityForm.wallet_address}
                   onChange={(e) => setCharityForm({ ...charityForm, wallet_address: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-white outline-none font-mono"
+                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-ink outline-none font-mono"
                 />
               </div>
 
@@ -702,7 +829,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   placeholder="Describe rescue work, medical programs, TNR..."
                   value={charityForm.description}
                   onChange={(e) => setCharityForm({ ...charityForm, description: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-white outline-none resize-none"
+                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-ink outline-none resize-none"
                 />
               </div>
 
@@ -713,7 +840,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   placeholder="https://..."
                   value={charityForm.avatar_url}
                   onChange={(e) => setCharityForm({ ...charityForm, avatar_url: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-white outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-card border border-line-strong text-ink outline-none"
                 />
               </div>
 
@@ -727,9 +854,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-black font-bold text-xs"
+                  className="px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-page font-bold text-xs"
                 >
-                  {editingCharity ? 'Save Changes' : 'Create Charity'}
+                  {editingCharity ? 'Save changes' : 'Add shelter'}
                 </button>
               </div>
             </form>

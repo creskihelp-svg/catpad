@@ -192,7 +192,6 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
           twitter: twitter.trim(),
           telegram: telegram.trim(),
           website: website.trim(),
-          isSimulation: true,
         }),
       });
 
@@ -220,7 +219,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
   return (
     <>
       <div
-        className="fixed inset-0 z-[60] overflow-y-auto bg-black/85 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[60] overflow-y-auto bg-black/45 p-4 backdrop-blur-sm"
         role="dialog"
         aria-modal="true"
         aria-label="Launch a coin"
@@ -233,7 +232,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                 <Rocket className="h-3.5 w-3.5 text-accent" />
                 Pump.fun launch
               </div>
-              <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-white sm:text-2xl">
+              <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-ink sm:text-2xl">
                 {launchedToken ? 'Your coin is live' : 'Launch a cat coin'}
               </h2>
             </div>
@@ -242,7 +241,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
               onClick={resetAndClose}
               disabled={isSubmitting}
               aria-label="Close launch form"
-              className="rounded-md p-1.5 text-muted transition hover:bg-white/5 hover:text-white disabled:opacity-40"
+              className="rounded-md p-1.5 text-muted transition hover:bg-black/5 hover:text-ink disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
@@ -251,7 +250,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
           {launchedToken ? (
             <div className="px-6 py-12 text-center">
               <CheckCircle2 className="mx-auto h-10 w-10 text-accent" />
-              <h3 className="mt-4 text-xl font-semibold text-white">
+              <h3 className="mt-4 text-xl font-semibold text-ink">
                 {launchedToken.name} (${launchedToken.symbol}) is live
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-muted">
@@ -262,15 +261,15 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
               <dl className="mx-auto mt-6 max-w-lg space-y-2 rounded-lg border border-line bg-surface px-4 py-3 text-left font-mono text-[11px]">
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-muted">Mint</dt>
-                  <dd className="truncate text-white">{shortAddress(launchedToken.mint, 6)}</dd>
+                  <dd className="truncate text-ink">{shortAddress(launchedToken.mint, 6)}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-muted">Fee PDA</dt>
-                  <dd className="truncate text-white">{launchedToken.config_pda}</dd>
+                  <dd className="truncate text-ink">{launchedToken.config_pda}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-muted">Signature</dt>
-                  <dd className="truncate text-white">{shortAddress(launchedToken.tx_signature, 6)}</dd>
+                  <dd className="truncate text-ink">{shortAddress(launchedToken.tx_signature, 6)}</dd>
                 </div>
               </dl>
 
@@ -279,7 +278,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                   href={`https://pump.fun/coin/${launchedToken.mint}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-accent-hover"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-page transition hover:bg-accent-hover"
                 >
                   View on Pump.fun
                   <ExternalLink className="h-4 w-4" />
@@ -287,7 +286,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                 <button
                   type="button"
                   onClick={resetAndClose}
-                  className="rounded-lg border border-line-strong px-5 py-2.5 text-sm text-white transition hover:bg-white/5"
+                  className="rounded-lg border border-line-strong px-5 py-2.5 text-sm text-ink transition hover:bg-black/5"
                 >
                   Done
                 </button>
@@ -311,7 +310,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         >
                           0{s.id}
                         </span>
-                        <span className={`text-xs ${active ? 'text-white' : 'text-muted'}`}>{s.label}</span>
+                        <span className={`text-xs ${active ? 'text-ink' : 'text-muted'}`}>{s.label}</span>
                         {done && <Check className="h-3 w-3 text-accent" />}
                       </li>
                     );
@@ -319,7 +318,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                 </ol>
 
                 {errorText && (
-                  <p className="mb-5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-white">
+                  <p className="mb-5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-ink">
                     {errorText}
                   </p>
                 )}
@@ -342,7 +341,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                           maxLength={LIMITS.name}
                           onChange={(e) => setName(e.target.value)}
                           placeholder="Whisker Index"
-                          className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                          className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                         />
                       </div>
 
@@ -360,7 +359,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                           maxLength={LIMITS.symbol}
                           onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                           placeholder="WHISK"
-                          className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-sm uppercase text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                          className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-sm uppercase text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                         />
                       </div>
                     </div>
@@ -379,7 +378,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         maxLength={LIMITS.description}
                         onChange={(e) => setDescription(e.target.value)}
                         placeholder="What is the meme, and which cats does it help?"
-                        className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                        className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                       />
                     </div>
 
@@ -403,7 +402,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                           </span>
                         )}
                         <span className="min-w-0">
-                          <span className="block text-sm text-white">
+                          <span className="block text-sm text-ink">
                             {imageUrl ? 'Replace image' : 'Upload an image'}
                           </span>
                           <span className="mt-0.5 block text-[11px] text-muted">
@@ -427,7 +426,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         onChange={(e) => setTwitter(e.target.value)}
                         placeholder="X / Twitter URL"
                         aria-label="X profile URL"
-                        className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                        className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                       />
                       <input
                         type="url"
@@ -435,7 +434,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         onChange={(e) => setTelegram(e.target.value)}
                         placeholder="Telegram URL"
                         aria-label="Telegram URL"
-                        className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                        className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                       />
                       <input
                         type="url"
@@ -443,7 +442,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         onChange={(e) => setWebsite(e.target.value)}
                         placeholder="Website URL"
                         aria-label="Website URL"
-                        className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                        className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                       />
                     </div>
                   </div>
@@ -475,7 +474,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                               >
                                 <img src={charity.avatar_url} alt="" className="h-9 w-9 rounded-md object-cover" />
                                 <span className="min-w-0 flex-1">
-                                  <span className="flex items-center gap-1.5 text-sm text-white">
+                                  <span className="flex items-center gap-1.5 text-sm text-ink">
                                     {charity.name}
                                     <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 text-accent" />
                                   </span>
@@ -495,7 +494,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                       <div className="flex items-end justify-between">
                         <div>
                           <span className="block text-xs text-muted">Creator fee share to the shelter</span>
-                          <span className="font-mono text-2xl text-white">{donationPercent}%</span>
+                          <span className="font-mono text-2xl text-ink">{donationPercent}%</span>
                         </div>
                         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
                           {donationBps} bps
@@ -510,7 +509,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         value={donationPercent}
                         onChange={(e) => setDonationPercent(Number(e.target.value))}
                         aria-label="Charity fee share percentage"
-                        className="mt-4 w-full accent-[#ff6a00]"
+                        className="mt-4 w-full accent-[#0a0a0a]"
                       />
 
                       <div className="mt-3 flex gap-2">
@@ -522,7 +521,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                             className={`flex-1 rounded-md border px-2 py-1 font-mono text-[11px] transition ${
                               donationPercent === pct
                                 ? 'border-accent text-accent'
-                                : 'border-line text-muted hover:text-white'
+                                : 'border-line text-muted hover:text-ink'
                             }`}
                           >
                             {pct}%
@@ -545,10 +544,10 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         type="checkbox"
                         checked={isImmutable}
                         onChange={(e) => setIsImmutable(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 accent-[#ff6a00]"
+                        className="mt-0.5 h-4 w-4 accent-[#0a0a0a]"
                       />
                       <span>
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-white">
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-ink">
                           <Lock className="h-3.5 w-3.5 text-accent" />
                           Lock the fee split permanently
                         </span>
@@ -569,12 +568,12 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         Fee split
                       </span>
                       <div className="mt-2 flex justify-between text-sm">
-                        <span className="text-white">{selectedCharity?.name || 'Shelter'}</span>
+                        <span className="text-ink">{selectedCharity?.name || 'Shelter'}</span>
                         <span className="font-mono text-accent">{formatPercent(donationBps)}</span>
                       </div>
                       <div className="mt-1.5 flex justify-between text-sm">
                         <span className="text-muted">You</span>
-                        <span className="font-mono text-white">{formatPercent(creatorShareBps)}</span>
+                        <span className="font-mono text-ink">{formatPercent(creatorShareBps)}</span>
                       </div>
                       <div className="mt-3 flex items-center gap-2 border-t border-line pt-3 text-[11px] text-muted">
                         <Lock className="h-3 w-3 text-accent" />
@@ -596,7 +595,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                           value={initialBuySol || ''}
                           onChange={(e) => setInitialBuySol(parseFloat(e.target.value) || 0)}
                           placeholder="0.00"
-                          className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 pr-14 font-mono text-sm text-white placeholder:text-muted focus:border-accent focus:outline-none"
+                          className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 pr-14 font-mono text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted">
                           SOL
@@ -609,12 +608,12 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
 
                     {!connected ? (
                       <div className="rounded-lg border border-dashed border-line-strong px-4 py-4 text-xs text-muted">
-                        <p className="text-white">A wallet is needed to sign this launch.</p>
+                        <p className="text-ink">A wallet is needed to sign this launch.</p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
                             onClick={() => setWalletOpen(true)}
-                            className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-accent-hover"
+                            className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-page transition hover:bg-accent-hover"
                           >
                             Connect wallet
                           </button>
@@ -625,7 +624,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                                 await generateTestWallet();
                                 toast('Devnet test wallet ready', 'success');
                               }}
-                              className="rounded-md border border-line px-3 py-1.5 text-xs text-white transition hover:border-line-strong"
+                              className="rounded-md border border-line px-3 py-1.5 text-xs text-ink transition hover:border-line-strong"
                             >
                               Use devnet test wallet
                             </button>
@@ -635,7 +634,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                     ) : (
                       <div className="flex items-center justify-between rounded-lg border border-line px-3.5 py-3 text-xs">
                         <span className="text-muted">Signing with</span>
-                        <span className="font-mono text-white">
+                        <span className="font-mono text-ink">
                           {shortAddress(publicKeyString, 5)}
                           {walletType === 'generated' && (
                             <span className="ml-2 rounded border border-line px-1 py-0.5 text-[9px] uppercase tracking-[0.14em] text-muted">
@@ -661,7 +660,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                     type="button"
                     onClick={() => (step === 1 ? resetAndClose() : setStep((step - 1) as 1 | 2))}
                     disabled={isSubmitting}
-                    className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm text-muted transition hover:border-line-strong hover:text-white disabled:opacity-40"
+                    className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40"
                   >
                     {step === 1 ? (
                       'Cancel'
@@ -680,7 +679,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                         if (step === 1 && !validateStepOne()) return;
                         setStep((step + 1) as 2 | 3);
                       }}
-                      className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-accent-hover"
+                      className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-page transition hover:bg-accent-hover"
                     >
                       Continue
                       <ArrowRight className="h-4 w-4" />
@@ -690,7 +689,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                       type="button"
                       onClick={handleLaunchSubmit}
                       disabled={isSubmitting || !connected || !selectedCharity}
-                      className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-page transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {isSubmitting ? <Spinner className="h-4 w-4 border-black border-t-transparent" /> : <Rocket className="h-4 w-4" />}
                       {isSubmitting ? 'Launching' : 'Sign & launch'}
@@ -700,7 +699,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
               </div>
 
               {/* --------------------------------------------------- PREVIEW */}
-              <aside className="bg-black/30 px-6 py-6">
+              <aside className="bg-surface px-6 py-6">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
                     Live preview
@@ -716,7 +715,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                       className="h-12 w-12 flex-shrink-0 rounded-lg border border-line object-cover"
                     />
                     <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-white">{previewName}</h3>
+                      <h3 className="truncate text-sm font-semibold text-ink">{previewName}</h3>
                       <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.08em] text-accent">
                         ${previewSymbol}
                       </p>
@@ -740,7 +739,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                   <div className="mt-4 space-y-1.5">
                     <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
                       <span>Curve</span>
-                      <span className="text-white">0.0%</span>
+                      <span className="text-ink">0.0%</span>
                     </div>
                     <div className="h-1 rounded-full bg-line" />
                   </div>
@@ -750,7 +749,7 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                       <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
                         Market cap
                       </span>
-                      <span className="font-mono text-sm text-white">0.00 SOL</span>
+                      <span className="font-mono text-sm text-ink">0.00 SOL</span>
                     </div>
                     <span className="rounded-md border border-line px-2 py-1 text-[11px] text-muted">
                       Trade

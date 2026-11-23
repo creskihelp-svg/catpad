@@ -1,146 +1,100 @@
-# CatPad 🐾
-> The Decentralized Pump.fun Memecoin Launchpad for Feline Charities on Solana.
+# CatPad
 
-CatPad enables anyone to create and launch cat-themed memecoins on Solana using Pump.fun's bonding curve, with automated, immutable creator fee splits irrevocably routed to verified cat rescues and shelters.
+Memecoins that fund cat rescues. Launch a coin on Solana, lock a share of the creator fees to a
+verified shelter wallet, and let anyone check the receipts.
 
----
+## Stack
 
-## 🔬 Pump.fun Fee-Sharing Investigation & Technical Findings
+- **Frontend:** React 19, Vite 8, TypeScript, Tailwind CSS 4
+- **API:** one Cloudflare Worker (`worker/index.ts`) serving `/api/*` plus the built SPA
+- **Local dev:** `server.ts` is a thin Express adapter around that same worker handler, so local
+  and deployed behaviour cannot drift
+- **Database:** Cloudflare D1 (SQLite) binding `DB`
+- **Chain:** Solana JSON-RPC, used to verify every launch and donation before it is recorded
 
-Before building CatPad, we conducted an in-depth investigation of Pump.fun's on-chain architecture, SDKs, and PumpPortal APIs:
+## Run locally
 
-### 1. Protocol Architecture & Program IDs
-* **Pump.fun Bonding Curve Program:** `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P`
-* **PumpFees (Creator Fee-Sharing) Program:** `pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ`
-* **Pump AMM Program (Raydium Graduation):** `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`
-
-### 2. How Fee-Sharing Works On-Chain
-* **Sharing Configuration PDA:** Derived via seeds `[b"sharing-config", mint.toBuffer()]` under the `PumpFees` program.
-* **Instruction Workflow:**
-  1. `createFeeSharingConfig`: Initializes the fee-sharing Program Derived Address (PDA) for a given token mint.
-  2. `updateFeeShares`: Allocates basis points among designated shareholder wallets (where 10,000 BPS = 100%). For CatPad, the chosen charity receives `donation_bps` (e.g., 3,000 BPS = 30%) and the creator receives the remaining `10,000 - donation_bps` (7,000 BPS = 70%).
-  3. **Immutability Locking:** Once configured, the authority can be permanently revoked/locked on-chain. This makes the fee sharing 100% immutable and trustless, ensuring creators cannot revoke or lower the charity's share post-launch.
-  4. **Fee Distribution:** Accumulated creator fees from bonding curve trades are swept directly to shareholder wallets permissionlessly.
-
-### 3. Key Limitations & Considerations Identified
-* **BPS Strict Summation:** The sum of shareholder shares must strictly equal exactly `10,000 BPS` (100%).
-* **Pre-Graduation vs Post-Graduation Pool PDAs:** When a token is active on the bonding curve, `pool` is set to `null` (or the bonding curve PDA). Once a token graduates to Raydium/PumpSwap AMM, fee distribution references the canonical AMM pool address (`canonicalPumpPoolPda(mint)`).
-* **Direct Metadata Uploads:** Pump.fun deprecated legacy internal IPFS uploads; token metadata and images must be pinned to IPFS (e.g., Pinata/Arweave) or hosted via public deterministic endpoints.
-* **Non-Custodial Design:** CatPad never stores private keys, seed phrases, or user funds. All transactions are composed as serialized payloads and signed exclusively by the creator's wallet (Phantom, Solflare, Backpack, or an ephemeral devnet test keypair).
-
----
-
-## 🎨 Design System & Brand Assets
-
-CatPad uses a flat, custom visual language: pure black canvas, flat dark-grey cards with thin borders, a single orange accent (`#FF6A00`), grotesk headlines and mono type for numbers, tickers and labels. No gradients, glows or emoji.
-
-Design tokens live in `src/index.css` (Tailwind v4 `@theme`): `bg-ink`, `bg-card`, `border-line`, `text-muted`, `text-accent`.
-
-Replace the placeholder brand files in `public/` and `public/brand/` with the real exports using the same filenames — `logo.svg`, `favicon.svg`, `og.png`, `hero.mp4`, `hero-poster.png`, `coin.png`. See `public/brand/README.md` for the full list.
-
-Optional public configuration (see `.env.example`):
-
-* `VITE_X_HANDLE` — handle shown in the footer, meta tags and share links.
-* `VITE_ADMIN_WALLETS` — comma-separated wallets allowed to see the admin link.
-* `VITE_ENABLE_DEVNET_WALLET` — exposes “Generate devnet test wallet” in production builds (always on in dev).
-
----
-
-## 🚀 Quick Start & Installation
-
-### Prerequisites
-* Node.js v18+ or v20+
-* npm or pnpm
-
-### 1. Clone & Install Dependencies
 ```bash
-npm install
+bun install
+cp .env.example .env      # optional; dev falls back to safe defaults
+bun run dev               # http://localhost:3000
 ```
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
+| Command | What it does |
+| --- | --- |
+| `bun run dev` | Dev server with Vite middleware and the shared API handler |
+| `bun run build` | Build the SPA into `dist/` |
+| `bun run build:worker` | Bundle the worker into `worker-dist/index.mjs` |
+| `bun run lint` | `tsc --noEmit` |
+| `bun run test` | Vitest: session tokens, address validation, transaction parsing |
+
+## Data
+
+Everything persisted lives in D1 and is created on first use:
+
+| Table | Holds |
+| --- | --- |
+| `charities` | Shelter name, EIN, website, Solana receiving wallet, total donations |
+| `launches` | One row per coin: mint, creator, shelter, fee share, launch transaction, featured/hidden flags |
+| `donations` | Verified transfers, unique per transaction signature |
+| `admin_actions` | Who changed what: shelter create/update/delete, featured, unlist |
+| `login_attempts` / `write_attempts` | Abuse throttles, shared across worker isolates |
+
+Without a `DB` binding (for example a bare `wrangler dev`) the worker keeps the same shapes in
+memory for the life of the process, so nothing breaks — it just does not survive a restart.
+
+## On-chain verification
+
+`worker/solana.ts` is shared by the worker and the dev server. A launch or donation is only accepted
+when the signature is read back from the RPC node and:
+
+- the transaction exists, succeeded, and was mined within the last hour;
+- for a launch, the creator wallet signed it, the mint appears in its account keys, and the shelter
+  wallet received lamports;
+- for a donation, the shelter wallet's balance grew by at least the recorded amount.
+
+Anything else is rejected with a specific reason and logged to the admin failure audit. The client
+never reports a launch as successful unless the server accepted a verified signature.
+
+Market cap and bonding-curve figures are `null` until a market data feed supplies them; the UI shows
+`—` rather than an invented number.
+
+## Admin
+
+- `/admin`, linked from the footer.
+- Identifier `ADMIN_USERNAME` (default `stud.disc`, case-insensitive) plus password `ADMIN_SECRET_KEY`.
+- The password is exchanged for an HMAC-SHA256 token (`v1.<expiry>.<signature>`, 8 hours). The
+  password itself is never a bearer token, and both credentials are compared in constant time.
+- 8 failed sign-ins per IP per 10 minutes, counted in D1.
+- Admin requests verify the signed token server-side; mutations are same-origin only.
+- Coins can be featured or hidden from the public directory; every action is written to the admin log.
+
+## Transparency and moderation
+
+- `/coin/<mint>` is a real page with its own title, description, image and canonical URL, served by
+  the worker with per-coin social tags.
+- `/transparency` lists every shelter wallet, coin launch transaction and donation, each linked to
+  Solscan.
+- Hidden coins disappear from `/coins`, `/api/launches` and their `/coin/<mint>` page; admins still
+  see them in the dashboard.
+
+## Deployment
+
+The site deploys to Freebuff Sites with `sites.manifest.json` (worker bundle plus `dist/`). The
+deployment needs:
+
+- a D1 binding named `DB` (created per environment),
+- `ADMIN_SECRET_KEY` and `ADMIN_USERNAME` secrets,
+- optionally `SENTRY_DSN` for error reporting and `SOLANA_RPC_URL` / `SOLANA_NETWORK` to point at
+  mainnet instead of devnet.
+
 ```bash
-cp .env.example .env
+bun run lint && bun run test && bun run build && bun run build:worker
 ```
 
-Key environment variables:
-```env
-# Solana Configuration
-SOLANA_NETWORK="devnet" # or "mainnet-beta"
-SOLANA_RPC_URL="https://api.devnet.solana.com"
+## Notes
 
-# Pump Programs
-PUMPFUN_PROGRAM_ID="6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
-PUMPFEES_PROGRAM_ID="pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ"
-
-# Supabase (Optional for local testing; automatic fallback provided)
-SUPABASE_URL="https://your-project.supabase.co"
-SUPABASE_ANON_KEY="your-anon-key"
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
-
-# Admin Authentication
-ADMIN_SECRET_KEY="catpad-admin-key-2026"
-ADMIN_EMAIL="admin@catpad.fun"
-```
-
-### 3. Run Development Server
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
----
-
-## 🗄️ Supabase Schema & Migrations
-
-The database migration file is located in `/supabase/schema.sql`.
-
-### Tables Created:
-1. `public.charities`: Verified feline rescues with EIN tax ID, website, and Solana receiving wallet address.
-2. `public.launches`: Token mints, creator wallets, metadata URIs, donation basis points, and fee-sharing PDA addresses.
-3. `public.donations`: On-chain donation and fee sweep records with transaction signatures.
-4. `public.admin_roles`: Server-side role-based access control (RBAC) linked to `auth.users(id)`.
-
-To apply to your Supabase project:
-```bash
-psql -h db.your-supabase-id.supabase.co -U postgres -d postgres -f supabase/schema.sql
-```
-
----
-
-## 🐾 Seed Charities
-
-The seed script (`/supabase/seed.ts`) provisions 4 real-world verified cat non-profits:
-
-1. **Flatbush Cats** (Brooklyn, NY) — 501(c)(3) EIN: `82-4112932`
-   * Solana Wallet: `FlatCat5gB1xXkZzYF7cR4vP2m9wQeL8aN3uJsK6mTr1`
-   * Mission: Affordable veterinary medicine and TNR rescue network.
-2. **Alley Cat Allies** (National / Global) — 501(c)(3) EIN: `52-1768407`
-   * Solana Wallet: `AlleyCat9mK3pL6vQ2wR8tN4xY1zF7cB5aE9sJ0dWe2`
-   * Mission: Pioneers in humane trap-neuter-return policies and emergency cat relief.
-3. **Blind Cat Rescue & Sanctuary** (St. Pauls, NC) — 501(c)(3) EIN: `20-8025211`
-   * Solana Wallet: `BlindCat3rT7yU1iO9pA5sD2fG4hJ6kL8zX0cV4bN6m`
-   * Mission: Lifetime sanctuary for blind, FIV+, and FeLV+ cats.
-4. **Tabby's Place Sanctuary** (Ringoes, NJ) — 501(c)(3) EIN: `22-3843519`
-   * Solana Wallet: `TabbyP1ace7qW4eR2tY9uI3oP5aS8dF1gH6jK0lZ8x`
-   * Mission: Cage-free haven offering specialized medical care for felines from hopeless situations.
-
----
-
-## 🔒 Security & Admin Access
-
-* **Admin Route:** `/admin` (the nav link only appears for wallets listed in `VITE_ADMIN_WALLETS`)
-* **Default dev passphrase:** `catpad-admin-key-2026` (set `ADMIN_SECRET_KEY` outside development)
-* **Server-Side Role Verification:** Every admin request (`/api/admin/*`) enforces cryptographic Bearer token validation through server middleware; client-only bypass is impossible.
-* **On-Chain Confirmation:** All token launches and donations are verified on the Solana RPC node before insertion into the database.
-
----
-
-## 📦 Deployment to Vercel
-
-1. Push to GitHub.
-2. Connect your repository to Vercel.
-3. Set Build Command: `npm run build`
-4. Set Output Directory: `dist`
-5. Configure environment variables in the Vercel Project Settings (`SOLANA_RPC_URL`, `SUPABASE_URL`, `ADMIN_SECRET_KEY`).
-6. Deploy!
+- Wallet connection uses the injected Phantom, Solflare or Backpack providers (`src/lib/wallets.tsx`).
+  The optional devnet test wallet exists only behind `VITE_ENABLE_DEVNET_WALLET` and its key is kept
+  in memory, never in `localStorage`.
+- Memecoins are high risk. Not financial advice. 18+.

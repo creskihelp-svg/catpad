@@ -13,17 +13,27 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentTab }) => {
       <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-3 px-5 py-7 text-xs text-muted sm:flex-row sm:items-center lg:px-8">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <span className="font-mono uppercase tracking-[0.16em]">© 2026 {BRAND.name}</span>
-          <button type="button" onClick={() => setCurrentTab('terms')} className="transition hover:text-white">
+          <button type="button" onClick={() => setCurrentTab('terms')} className="transition hover:text-ink">
             Terms
           </button>
-          <button type="button" onClick={() => setCurrentTab('risk')} className="transition hover:text-white">
+          <button type="button" onClick={() => setCurrentTab('risk')} className="transition hover:text-ink">
             Risk
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('transparency')}
+            className="transition hover:text-ink"
+          >
+            Transparency
+          </button>
+          <button type="button" onClick={() => setCurrentTab('admin')} className="transition hover:text-ink">
+            Admin
           </button>
           <a
             href={BRAND.xUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 transition hover:text-white"
+            className="inline-flex items-center gap-1 transition hover:text-ink"
           >
             @{BRAND.xHandle.replace(/^@/, '')}
             <ArrowUpRight className="h-3 w-3" />

@@ -31,7 +31,12 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const totalRaisedSol = charities.reduce((sum, c) => sum + Number(c.total_donations_sol), 0);
-  const linkedTokenCount = new Set(launches.map((l) => l.charity_id)).size;
+  // Only count launches whose shelter still exists, so a cleared partner list
+  // doesn't claim shelters it can no longer show.
+  const shelterIds = new Set(charities.map((c) => c.id));
+  const linkedTokenCount = new Set(
+    launches.filter((l) => shelterIds.has(l.charity_id)).map((l) => l.charity_id)
+  ).size;
 
   const handleCopy = async (id: string, text: string) => {
     try {
@@ -47,8 +52,8 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
     <div className="mx-auto w-full max-w-7xl px-5 py-16 lg:px-8">
       <Reveal>
         <div className="max-w-3xl">
-          <SectionLabel>03 / Verified shelters</SectionLabel>
-          <h1 className="mt-3 text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl">
+          <SectionLabel>04 / Verified shelters</SectionLabel>
+          <h1 className="mt-3 text-4xl font-bold tracking-[-0.035em] text-ink sm:text-5xl">
             The shelters on the other side of the fee split
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-muted sm:text-base">
@@ -64,7 +69,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
             {hasValue(totalRaisedSol) && (
               <div>
                 <SectionLabel className="tracking-[0.16em]">Given to shelters</SectionLabel>
-                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">
+                <p className="mt-2 font-mono text-2xl text-ink sm:text-3xl">
                   {totalRaisedSol.toFixed(2)} SOL
                 </p>
               </div>
@@ -72,13 +77,13 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
             {hasValue(charities.length) && (
               <div>
                 <SectionLabel className="tracking-[0.16em]">Verified partners</SectionLabel>
-                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">{charities.length}</p>
+                <p className="mt-2 font-mono text-2xl text-ink sm:text-3xl">{charities.length}</p>
               </div>
             )}
             {hasValue(linkedTokenCount) && (
               <div>
                 <SectionLabel className="tracking-[0.16em]">Shelters with a live coin</SectionLabel>
-                <p className="mt-2 font-mono text-2xl text-white sm:text-3xl">{linkedTokenCount}</p>
+                <p className="mt-2 font-mono text-2xl text-ink sm:text-3xl">{linkedTokenCount}</p>
               </div>
             )}
           </div>
@@ -90,7 +95,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
         <button
           type="button"
           onClick={openLaunchModal}
-          className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:bg-accent-hover"
+          className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-page transition hover:bg-accent-hover"
         >
           Launch for a shelter
           <ArrowUpRight className="h-4 w-4" />
@@ -126,7 +131,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <h2 className="truncate text-base font-semibold text-white">{charity.name}</h2>
+                      <h2 className="truncate text-base font-semibold text-ink">{charity.name}</h2>
                       {charity.is_verified && (
                         <ShieldCheck className="h-4 w-4 flex-shrink-0 text-accent" aria-label="Verified" />
                       )}
@@ -138,7 +143,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                       href={charity.website}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition hover:text-white"
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition hover:text-ink"
                     >
                       {charity.website.replace(/^https?:\/\//, '')}
                       <ExternalLink className="h-3 w-3" />
@@ -153,14 +158,14 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                     <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
                       Receiving wallet
                     </span>
-                    <span className="font-mono text-xs text-white">{shortAddress(charity.wallet_address, 6)}</span>
+                    <span className="font-mono text-xs text-ink">{shortAddress(charity.wallet_address, 6)}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleCopy(charity.id, charity.wallet_address)}
                       aria-label="Copy wallet address"
-                      className="rounded-md border border-line p-1.5 text-muted transition hover:border-line-strong hover:text-white"
+                      className="rounded-md border border-line p-1.5 text-muted transition hover:border-line-strong hover:text-ink"
                     >
                       {isCopied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
@@ -169,7 +174,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label="View wallet on Solscan"
-                      className="rounded-md border border-line p-1.5 text-muted transition hover:border-line-strong hover:text-white"
+                      className="rounded-md border border-line p-1.5 text-muted transition hover:border-line-strong hover:text-ink"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
@@ -181,7 +186,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                     <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
                       Total received
                     </span>
-                    <span className="font-mono text-lg text-white">
+                    <span className="font-mono text-lg text-ink">
                       {Number(charity.total_donations_sol).toFixed(2)} SOL
                     </span>
                   </div>
@@ -189,7 +194,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                     <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
                       Coins
                     </span>
-                    <span className="font-mono text-sm text-white">{linkedLaunches.length}</span>
+                    <span className="font-mono text-sm text-ink">{linkedLaunches.length}</span>
                   </div>
                 </div>
 
@@ -200,7 +205,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                         key={token.id}
                         type="button"
                         onClick={() => onSelectToken(token)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[11px] text-white transition hover:border-accent hover:text-accent"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[11px] text-ink transition hover:border-accent hover:text-accent"
                       >
                         ${token.symbol}
                         <span className="text-muted">{formatPercent(token.donation_bps)}</span>
@@ -212,7 +217,7 @@ export const CharitiesPage: React.FC<CharitiesPageProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenDonate(charity)}
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong px-4 py-2.5 text-sm font-medium text-white transition hover:border-accent hover:text-accent"
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong px-4 py-2.5 text-sm font-medium text-ink transition hover:border-accent hover:text-accent"
                 >
                   Donate SOL directly
                 </button>

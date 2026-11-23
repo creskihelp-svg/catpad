@@ -16,6 +16,11 @@ export const BRAND = {
   disclaimer: 'Memecoins are high risk. Not financial advice. 18+.',
   ogImage: '/og.png',
   assets: {
+    cat: '/brand/cat.svg',
+    /** Drop the original artwork here and the navbar logo uses it as-is. */
+    catLogo: '/brand/cat-logo.png',
+    /** 4x4 blink sprite sheet, drawn by scripts/render-cat-sprite.py. */
+    catSprite: '/brand/cat-sprite.png',
     logo: '/brand/logo.svg',
     coin: '/brand/coin.png',
     heroVideo: '/brand/hero.mp4',

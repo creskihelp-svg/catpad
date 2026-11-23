@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 /**
- * Global audio preference. The hero background video and UI confirmations
- * respect this, and the choice survives reloads.
+ * Global audio preference: on by default, remembered once changed. The pet
+ * section's purr and the navbar toggle both read this.
  */
 interface SoundContextValue {
   muted: boolean;
@@ -10,14 +10,16 @@ interface SoundContextValue {
 }
 
 const SoundContext = createContext<SoundContextValue | null>(null);
-const STORAGE_KEY = 'catpad_sound_muted';
+// v2: sound used to default to muted, so old stored values are not a real choice.
+const STORAGE_KEY = 'catpad_sound_muted_v2';
 
 export const SoundProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  /** Sound is on by default; muting is an explicit choice that persists. */
   const [muted, setMuted] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY) !== 'false';
+      return localStorage.getItem(STORAGE_KEY) === 'true';
     } catch {
-      return true;
+      return false;
     }
   });
 

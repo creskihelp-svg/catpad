@@ -45,7 +45,16 @@ export const TokenCard: React.FC<TokenCardProps> = ({ launch, charity, onSelect 
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-white">{launch.name}</h3>
+              <a
+                href={`/coin/${launch.mint}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSelect(launch);
+                }}
+                className="truncate text-sm font-semibold text-ink hover:underline"
+              >
+                {launch.name}
+              </a>
               {launch.is_featured && (
                 <span className="rounded border border-accent/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-accent">
                   Featured
@@ -60,7 +69,7 @@ export const TokenCard: React.FC<TokenCardProps> = ({ launch, charity, onSelect 
                 type="button"
                 onClick={handleCopyMint}
                 title="Copy mint address"
-                className="flex items-center gap-1 font-mono text-[10px] text-muted transition hover:text-white"
+                className="flex items-center gap-1 font-mono text-[10px] text-muted transition hover:text-ink"
               >
                 {shortAddress(launch.mint)}
                 {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
@@ -86,12 +95,14 @@ export const TokenCard: React.FC<TokenCardProps> = ({ launch, charity, onSelect 
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
             <span>Curve</span>
-            <span className="text-white">{launch.bonding_curve_progress.toFixed(1)}%</span>
+            <span className="text-ink">
+              {launch.bonding_curve_progress === null ? '—' : `${launch.bonding_curve_progress.toFixed(1)}%`}
+            </span>
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full bg-accent transition-all duration-500"
-              style={{ width: `${Math.min(Math.max(launch.bonding_curve_progress, 0), 100)}%` }}
+              style={{ width: `${Math.min(Math.max(launch.bonding_curve_progress ?? 0, 0), 100)}%` }}
             />
           </div>
         </div>
@@ -101,7 +112,9 @@ export const TokenCard: React.FC<TokenCardProps> = ({ launch, charity, onSelect 
             <span className="block font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
               Market cap
             </span>
-            <span className="font-mono text-sm text-white">{launch.market_cap_sol} SOL</span>
+            <span className="font-mono text-sm text-ink">
+              {launch.market_cap_sol === null ? '—' : `${launch.market_cap_sol} SOL`}
+            </span>
           </div>
 
           <a
@@ -109,7 +122,7 @@ export const TokenCard: React.FC<TokenCardProps> = ({ launch, charity, onSelect 
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-line-strong hover:text-white"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-line-strong hover:text-ink"
           >
             Trade
             <ExternalLink className="h-3 w-3" />

@@ -48,12 +48,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             {t.variant === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />}
             {t.variant === 'error' && <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />}
             {t.variant === 'info' && <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted" />}
-            <p className="flex-1 text-xs leading-relaxed text-white">{t.message}</p>
+            <p className="flex-1 text-xs leading-relaxed text-ink">{t.message}</p>
             <button
               type="button"
               onClick={() => dismiss(t.id)}
               aria-label="Dismiss notification"
-              className="-mr-1 rounded p-0.5 text-muted transition hover:text-white"
+              className="-mr-1 rounded p-0.5 text-muted transition hover:text-ink"
             >
               <X className="h-3.5 w-3.5" />
             </button>
