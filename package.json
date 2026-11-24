@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && npm run build:worker",
-    "build:worker": "esbuild worker/index.ts --bundle --format=esm --platform=browser --outfile=worker-dist/index.mjs",
+    "build:worker": "esbuild worker/index.ts --bundle --format=esm --platform=browser --outfile=worker-dist/index.mjs && esbuild worker/node-adapter.ts --bundle --format=esm --platform=node --packages=external --outfile=api/_worker-bundle.mjs",
     "preview": "vite preview",
     "start": "node server.ts --prod",
     "clean": "rm -rf dist server.js",
