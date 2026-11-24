@@ -12,14 +12,27 @@ interface FloatingHeart {
   rotate: number;
 }
 
-const REACTIONS = ['purrs', 'blinks slowly', 'headbutts you', 'says mrrp', 'kneads the blanket', 'flicks a whisker'];
+interface PetTheCatProps {
+  embedded?: boolean;
+}
 
-const STORAGE_KEY = 'catpad_pets';
+const REACTIONS = [
+  'purrs',
+  'blinks slowly',
+  'headbutts you',
+  'says mrrp',
+  'kneads the blanket',
+  'flicks a whisker',
+];
+
+export const PET_STORAGE_KEY = 'catpad_pets';
 
 /** A short, soft purr: brownish noise through a low-pass, wobbling at ~26Hz. */
 const playPurr = () => {
   try {
-    const AudioCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const AudioCtor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtor) return;
 
     const ctx = new AudioCtor();
@@ -66,12 +79,7 @@ const playPurr = () => {
   }
 };
 
-/**
- * The cat from the sticker, alive. It breathes, blinks and follows your cursor;
- * pet it and it squishes, leans into your hand, screws its eyes shut, purrs
- * (with sound when the site isn't muted) and sends hearts back.
- */
-export const PetTheCat: React.FC = () => {
+export const PetTheCat: React.FC<PetTheCatProps> = ({ embedded = false }) => {
   const { muted, toggleMuted } = useSound();
   const [pets, setPets] = useState(0);
   const [reaction, setReaction] = useState<string | null>(null);
@@ -85,10 +93,10 @@ export const PetTheCat: React.FC = () => {
 
   useEffect(() => {
     try {
-      const stored = Number(localStorage.getItem(STORAGE_KEY));
+      const stored = Number(localStorage.getItem(PET_STORAGE_KEY));
       if (Number.isFinite(stored) && stored > 0) setPets(stored);
     } catch {
-      /* storage unavailable — count stays per session */
+      /* storage unavailable */
     }
   }, []);
 
@@ -103,10 +111,11 @@ export const PetTheCat: React.FC = () => {
     setPets((prev) => {
       const next = prev + 1;
       try {
-        localStorage.setItem(STORAGE_KEY, String(next));
+        localStorage.setItem(PET_STORAGE_KEY, String(next));
       } catch {
         /* ignore */
       }
+      window.dispatchEvent(new CustomEvent('catpad:pet', { detail: next }));
       return next;
     });
 
@@ -115,13 +124,12 @@ export const PetTheCat: React.FC = () => {
     setPurring(true);
     timers.current.push(window.setTimeout(() => setPurring(false), 1450));
 
-    // The purr starts just after the eyes close, like the real sequence.
     if (!muted) timers.current.push(window.setTimeout(playPurr, 170));
 
     const batch: FloatingHeart[] = Array.from({ length: 3 }, () => ({
       id: nextHeartId.current++,
-      left: 16 + Math.random() * 68,
-      size: 12 + Math.random() * 10,
+      left: 14 + Math.random() * 72,
+      size: 13 + Math.random() * 10,
       delay: Math.random() * 170,
       rotate: -20 + Math.random() * 40,
     }));
@@ -135,118 +143,117 @@ export const PetTheCat: React.FC = () => {
     );
   }, [muted]);
 
-  /** Eyes follow the pointer, clamped so the pupils stay inside the iris. */
   const trackPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const dx = (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
     const dy = (event.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
-    setLook({ x: Math.max(-2.6, Math.min(2.6, dx * 2.6)), y: Math.max(-1.7, Math.min(1.7, dy * 1.7)) });
+    setLook({
+      x: Math.max(-1, Math.min(1, dx)),
+      y: Math.max(-1, Math.min(1, dy)),
+    });
   };
 
-  const label = purring ? 'purring' : pets === 0 ? 'waiting for scratches' : reaction ? `it ${reaction}` : 'happy cat';
+  const label = purring
+    ? 'purring'
+    : pets === 0
+      ? 'waiting for scratches'
+      : reaction
+        ? `it ${reaction}`
+        : 'happy cat';
 
   return (
-    <section
+    <div
       id="pet-the-cat"
-      className="scroll-mt-20 border-b border-line bg-surface"
-      aria-labelledby="pet-the-cat-title"
+      className={embedded ? 'scroll-mt-20' : 'scroll-mt-20 border-b border-line bg-surface'}
     >
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 justify-items-center gap-6 px-5 py-10 text-center sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:justify-items-start sm:gap-10 sm:py-12 sm:text-left lg:px-8">
-        <div className="order-2 sm:order-1">
+      <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
+        <div className="max-w-md">
           <SectionLabel>02 / Cat on duty</SectionLabel>
           <h2
             id="pet-the-cat-title"
-            className="mt-2 text-xl font-semibold tracking-[-0.02em] text-ink sm:text-2xl"
+            className="mt-2 font-grotesk text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl"
           >
             Pet the cat.
           </h2>
-          <p className="mx-auto mt-1.5 max-w-[22rem] text-sm leading-relaxed text-muted sm:mx-0">
+          <p className="mt-2 text-sm leading-relaxed text-muted">
             Meet Kage. Scratch behind the ears — Kage purrs and sends hearts back.
           </p>
-          <p className="mt-3 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted sm:hidden">
-            <span className="text-ink">{pets.toLocaleString('en-US')}</span> {pets === 1 ? 'pet' : 'pets'} · {label}
-            {purring && <PurrWave />}
-          </p>
-        </div>
-
-        {/* The cat */}
-        <div className="relative order-1 flex w-full flex-col items-center sm:order-2 sm:w-auto">
-          <div className="pointer-events-none absolute inset-x-0 bottom-full flex justify-center" aria-hidden="true">
-            {hearts.map((heart) => (
-              <span
-                key={heart.id}
-                className="heart-rise absolute bottom-0"
-                style={{ left: `${heart.left}%`, animationDelay: `${heart.delay}ms` }}
-              >
-                <Heart
-                  className="text-ink"
-                  style={{ width: heart.size, height: heart.size, transform: `rotate(${heart.rotate}deg)` }}
-                  fill="currentColor"
-                  strokeWidth={0}
-                />
-              </span>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={pet}
-            onPointerMove={trackPointer}
-            onPointerLeave={() => setLook({ x: 0, y: 0 })}
-            aria-label="Pet the cat"
-            className="group relative mx-auto flex h-28 w-28 cursor-pointer items-center justify-center rounded-full bg-ink transition duration-300 hover:scale-[1.03] active:scale-95 sm:h-36 sm:w-36 lg:h-40 lg:w-40"
-          >
-            <span
-              key={reactionKey}
-              className={`block ${purring ? 'cat-react cat-purring' : ''}`}
-              style={
-                {
-                  '--cat-look-x': look.x,
-                  '--cat-look-y': look.y,
-                } as React.CSSProperties
-              }
-            >
-              <CatMark className="h-[4.875rem] w-[4.875rem] select-none sm:h-[6.25rem] sm:w-[6.25rem] lg:h-28 lg:w-28" />
+          <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1.5 text-ink">
+              <PawPrint className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="font-semibold tabular-nums">{pets.toLocaleString('en-US')}</span>{' '}
+              {pets === 1 ? 'pet' : 'pets'}
             </span>
-          </button>
-
-          <div className="mt-2.5 flex w-full flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-            <span className="flex items-center gap-1.5">
-              <PawPrint className="h-3 w-3" aria-hidden="true" />
-              {purring ? 'purr' : 'tap to pet'}
+            <span aria-hidden="true">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              {label}
               {purring && <PurrWave />}
             </span>
+          </div>
+        </div>
 
-            <span className="h-3 w-px bg-line-strong" aria-hidden="true" />
+        {/* Interactive Kage stage */}
+        <div className="flex flex-wrap items-center gap-5 sm:justify-end">
+          <div className="relative flex flex-col items-center">
+            <div className="pointer-events-none absolute inset-x-0 bottom-full flex justify-center" aria-hidden="true">
+              {hearts.map((heart) => (
+                <span
+                  key={heart.id}
+                  className="heart-rise absolute bottom-0"
+                  style={{ left: `${heart.left}%`, animationDelay: `${heart.delay}ms` }}
+                >
+                  <Heart
+                    className="text-red-500"
+                    style={{
+                      width: heart.size,
+                      height: heart.size,
+                      transform: `rotate(${heart.rotate}deg)`,
+                    }}
+                    fill="currentColor"
+                    strokeWidth={0}
+                  />
+                </span>
+              ))}
+            </div>
 
             <button
               type="button"
-              onClick={toggleMuted}
-              aria-pressed={!muted}
-              aria-label={muted ? 'Turn the purr sound on' : 'Turn the purr sound off'}
-              className="inline-flex items-center gap-1 rounded-full border border-line bg-page px-2 py-[3px] transition hover:border-line-strong hover:text-ink"
+              onClick={pet}
+              onPointerMove={trackPointer}
+              onPointerLeave={() => setLook({ x: 0, y: 0 })}
+              aria-label="Pet Kage the cat"
+              className="group relative flex h-24 w-28 cursor-pointer items-center justify-center rounded-2xl border border-line bg-white shadow-[0_6px_20px_-10px_rgba(17,17,17,0.12)] transition duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[0_12px_28px_-10px_rgba(17,17,17,0.16)] active:scale-95"
             >
-              {muted ? <VolumeX className="h-3 w-3" aria-hidden="true" /> : <Volume2 className="h-3 w-3" aria-hidden="true" />}
-              {muted ? 'sound off' : 'sound on'}
+              <span
+                key={reactionKey}
+                className={`inline-flex items-center justify-center ${purring ? 'cat-react' : ''}`}
+              >
+                <CatMark
+                  className="h-16 w-16"
+                  idle
+                  purring={purring}
+                  gaze={look}
+                  gazeRangePx={2.6}
+                />
+              </span>
             </button>
+
+            <div className="mt-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+              <span>{purring ? 'purr' : 'tap to pet'}</span>
+              <button
+                type="button"
+                onClick={toggleMuted}
+                aria-pressed={!muted}
+                aria-label={muted ? 'Turn purr sound on' : 'Turn purr sound off'}
+                className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2 py-0.5 transition hover:border-line-strong hover:text-ink"
+              >
+                {muted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Receipt */}
-        <div className="order-3 hidden flex-col items-end gap-1 text-right sm:flex">
-          <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted">
-            {pets === 1 ? 'Pet given' : 'Pets given'}
-          </span>
-          <span className="font-mono text-4xl leading-none text-ink tabular-nums" aria-live="polite">
-            {pets.toLocaleString('en-US')}
-          </span>
-          <span className="mt-1 flex items-center gap-2 font-mono text-[11px] lowercase tracking-[0.08em] text-muted">
-            {label}
-            {purring && <PurrWave />}
-          </span>
-        </div>
       </div>
-    </section>
+    </div>
   );
 };
 

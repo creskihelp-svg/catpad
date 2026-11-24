@@ -57,3 +57,84 @@ export const verifySession = async (secret: string, token: string | null): Promi
   const expected = await sign(secret, `${parts[0]}.${parts[1]}`);
   return timingSafeEqual(expected, parts[2]);
 };
+
+const toHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+const fromHex = (hex: string): Uint8Array | null => {
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length % 2 !== 0) return null;
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+};
+
+/** Fixed-length SHA-256 constant-time comparison (prevents length leakage). */
+export const constantTimeDigestEqual = async (a: string, b: string): Promise<boolean> => {
+  const [da, db] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(a)),
+    crypto.subtle.digest('SHA-256', encoder.encode(b)),
+  ]);
+  const ua = new Uint8Array(da);
+  const ub = new Uint8Array(db);
+  let diff = 0;
+  for (let i = 0; i < ua.length; i += 1) diff |= ua[i] ^ ub[i];
+  return diff === 0;
+};
+
+export interface PasswordHashRecord {
+  salt: string;
+  hash: string;
+  iterations: number;
+}
+
+const PBKDF2_ITERATIONS = 100_000;
+
+export const hashPassword = async (password: string): Promise<PasswordHashRecord> => {
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, [
+    'deriveBits',
+  ]);
+  const derived = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    keyMaterial,
+    256,
+  );
+  return {
+    salt: toHex(saltBytes),
+    hash: toHex(new Uint8Array(derived)),
+    iterations: PBKDF2_ITERATIONS,
+  };
+};
+
+export const verifyPassword = async (
+  password: string,
+  record: PasswordHashRecord,
+): Promise<boolean> => {
+  const saltBytes = fromHex(record.salt);
+  const expectedBytes = fromHex(record.hash);
+  if (!saltBytes || !expectedBytes || !Number.isFinite(record.iterations) || record.iterations < 10_000) {
+    return false;
+  }
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, [
+    'deriveBits',
+  ]);
+  const derived = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: saltBytes as BufferSource,
+        iterations: record.iterations,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      expectedBytes.length * 8,
+    ),
+  );
+  if (derived.length !== expectedBytes.length) return false;
+  let diff = 0;
+  for (let i = 0; i < derived.length; i += 1) diff |= derived[i] ^ expectedBytes[i];
+  return diff === 0;
+};
+

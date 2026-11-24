@@ -8,7 +8,7 @@
  * its data in memory.
  */
 
-import type { AdminAction, Charity, Donation, Launch } from '../src/types.ts';
+import type { AdminAction, Charity, Donation, Launch, SiteBanner } from '../src/types.ts';
 
 type D1Row = Record<string, unknown>;
 
@@ -92,6 +92,12 @@ const WRITE_SCHEMA = `CREATE TABLE IF NOT EXISTS write_attempts (
   ip TEXT PRIMARY KEY,
   count INTEGER NOT NULL,
   reset_at INTEGER NOT NULL
+)`;
+
+const SETTINGS_SCHEMA = `CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 )`;
 
 const CHARITY_COLUMNS = `id, name, ein_tax_id, website, wallet_address, description, avatar_url,
@@ -444,3 +450,49 @@ export const clearLoginAttempts = async (env: DbEnv, ip: string): Promise<void> 
   if (!db) return;
   await db.prepare('DELETE FROM login_attempts WHERE ip = ?').bind(ip).run();
 };
+
+// --- site settings ----------------------------------------------------------
+
+export const readBannerSetting = async (env: DbEnv): Promise<SiteBanner | null> => {
+  const db = env.DB;
+  if (!db) return null;
+  await ensure(db, SETTINGS_SCHEMA);
+  const row = await db
+    .prepare('SELECT value, updated_at FROM site_settings WHERE key = ?')
+    .bind('banner')
+    .first<{ value: string; updated_at: string }>();
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.value) as Partial<SiteBanner>;
+    return {
+      text: typeof parsed.text === 'string' ? parsed.text : 'CA dropping soon',
+      ca_address: typeof parsed.ca_address === 'string' ? parsed.ca_address : '',
+      enabled: parsed.enabled !== false,
+      updated_at: row.updated_at,
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const writeBannerSetting = async (env: DbEnv, banner: SiteBanner): Promise<void> => {
+  const db = env.DB;
+  if (!db) return;
+  await ensure(db, SETTINGS_SCHEMA);
+  const updatedAt = banner.updated_at ?? new Date().toISOString();
+  const payload = JSON.stringify({
+    text: banner.text,
+    ca_address: banner.ca_address ?? '',
+    enabled: banner.enabled,
+  });
+  await db
+    .prepare(
+      `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .bind('banner', payload, updatedAt)
+    .run();
+};
+
+
+

@@ -1,13 +1,15 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Keypair } from '@solana/web3.js';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Keypair, PublicKey } from '@solana/web3.js';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
+  Copy,
   ExternalLink,
   ImagePlus,
   Lock,
+  RefreshCw,
   Rocket,
   ShieldCheck,
   X,
@@ -36,6 +38,27 @@ const STEPS = [
 const LIMITS = { name: 32, symbol: 10, description: 280 };
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
+const isValidSolanaCa = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    new PublicKey(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const readJsonSafe = async <T = any>(res: Response): Promise<T | null> => {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+};
+
 const Counter: React.FC<{ value: number; max: number }> = ({ value, max }) => (
   <span className={`font-mono text-[10px] ${value > max ? 'text-accent' : 'text-muted'}`}>
     {value}/{max}
@@ -59,6 +82,10 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
   const [symbol, setSymbol] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [caMode, setCaMode] = useState<'auto' | 'custom'>('auto');
+  const [generatedMintKeypair, setGeneratedMintKeypair] = useState<Keypair | null>(null);
+  const [customCa, setCustomCa] = useState('');
+  const [copiedCa, setCopiedCa] = useState(false);
   const [selectedCharityId, setSelectedCharityId] = useState(charities[0]?.id || '');
   const [donationPercent, setDonationPercent] = useState(30);
   const [isImmutable, setIsImmutable] = useState(true);
@@ -78,10 +105,38 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
     [charities, selectedCharityId]
   );
 
+  const regenerateMintKeypair = useCallback(async (): Promise<Keypair> => {
+    const kp = (await (Keypair as any).generate()) as Keypair;
+    setGeneratedMintKeypair(kp);
+    setCopiedCa(false);
+    return kp;
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && !generatedMintKeypair) {
+      void regenerateMintKeypair();
+    }
+  }, [isOpen, generatedMintKeypair, regenerateMintKeypair]);
+
   const donationBps = donationPercent * 100;
   const creatorShareBps = 10000 - donationBps;
+  const activeCa =
+    caMode === 'custom' ? customCa.trim() : generatedMintKeypair?.publicKey.toBase58() || '';
+  const customCaValid = caMode === 'custom' ? isValidSolanaCa(customCa) : true;
 
   if (!isOpen) return null;
+
+  const copyCa = async (value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedCa(true);
+      toast('Contract address copied', 'success');
+      window.setTimeout(() => setCopiedCa(false), 1800);
+    } catch {
+      toast('Could not copy contract address', 'error');
+    }
+  };
 
   const resetAndClose = () => {
     onClose();
@@ -89,6 +144,10 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
     setLaunchedToken(null);
     setErrorText('');
     setProgressText('');
+    setCaMode('auto');
+    setCustomCa('');
+    setGeneratedMintKeypair(null);
+    setCopiedCa(false);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,6 +179,10 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
       setErrorText('Some fields are over their character limit.');
       return false;
     }
+    if (caMode === 'custom' && !isValidSolanaCa(customCa)) {
+      setErrorText('Enter a valid Solana contract address (CA) or switch to Auto-generate.');
+      return false;
+    }
     setErrorText('');
     return true;
   };
@@ -127,6 +190,10 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
   const handleLaunchSubmit = async () => {
     if (!selectedCharity) {
       setErrorText('No verified shelter is available to receive fees.');
+      return;
+    }
+    if (caMode === 'custom' && !isValidSolanaCa(customCa)) {
+      setErrorText('Enter a valid Solana contract address (CA) before launching.');
       return;
     }
     if (!connected || !publicKeyString) {
@@ -151,25 +218,31 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
           donationBps,
           creatorWallet: publicKeyString,
           isImmutable,
+          mint: activeCa,
         }),
       });
 
-      const prepData = await prepRes.json();
-      if (!prepRes.ok) throw new Error(prepData.error || 'Failed to prepare launch parameters');
+      const prepData = await readJsonSafe<{ error?: string }>(prepRes);
+      if (!prepRes.ok) {
+        throw new Error(prepData?.error || 'Failed to prepare launch parameters');
+      }
 
-      setProgressText('Building the mint and fee-share transaction...');
-      const mintKeypair = await Keypair.generate();
+      setProgressText('Building the CA and fee-share transaction...');
+      const mintKp =
+        caMode === 'custom' ? null : generatedMintKeypair || (await regenerateMintKeypair());
+      const targetCa =
+        caMode === 'custom' ? customCa.trim() : mintKp!.publicKey.toBase58();
 
       setProgressText('Waiting for your wallet signature...');
       const txResult = await signAndSendLaunchTransaction({
-        mintKeypair,
+        ...(caMode === 'custom' ? { customMint: targetCa } : { mintKeypair: mintKp }),
         charityWallet: selectedCharity.wallet_address,
         donationBps,
         initialBuySol: Number(initialBuySol) || 0,
         tokenMeta: {
           name: name.trim(),
           symbol: symbol.trim().toUpperCase(),
-          uri: `https://catpad.fun/metadata/${mintKeypair.publicKey.toBase58()}.json`,
+          uri: `https://catpad.fun/metadata/${targetCa}.json`,
         },
       });
 
@@ -195,9 +268,11 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
         }),
       });
 
-      const confirmData = await confirmRes.json();
-      if (!confirmRes.ok || !confirmData.success) {
-        throw new Error(confirmData.error || 'Failed to confirm the launch on-chain');
+      const confirmData = await readJsonSafe<{ success?: boolean; error?: string; launch?: Launch }>(
+        confirmRes
+      );
+      if (!confirmRes.ok || !confirmData?.success || !confirmData.launch) {
+        throw new Error(confirmData?.error || 'Failed to confirm the launch on-chain');
       }
 
       setLaunchedToken(confirmData.launch);
@@ -258,10 +333,30 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                 {selectedCharity?.name || 'the selected shelter'}.
               </p>
 
-              <dl className="mx-auto mt-6 max-w-lg space-y-2 rounded-lg border border-line bg-surface px-4 py-3 text-left font-mono text-[11px]">
-                <div className="flex items-center justify-between gap-4">
-                  <dt className="text-muted">Mint</dt>
-                  <dd className="truncate text-ink">{shortAddress(launchedToken.mint, 6)}</dd>
+              <dl className="mx-auto mt-6 max-w-lg space-y-2.5 rounded-lg border border-line bg-surface px-4 py-3.5 text-left font-mono text-[11px]">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="flex-shrink-0 text-muted">Contract Address (CA)</dt>
+                  <dd className="flex min-w-0 items-center gap-2 text-ink">
+                    <span className="truncate">{launchedToken.mint}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyCa(launchedToken.mint)}
+                      aria-label="Copy contract address"
+                      className="inline-flex flex-shrink-0 items-center gap-1 rounded border border-line bg-card px-2 py-0.5 text-[10px] text-ink transition hover:border-line-strong"
+                    >
+                      {copiedCa ? (
+                        <>
+                          <Check className="h-3 w-3 text-accent" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                  </dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-muted">Fee PDA</dt>
@@ -419,6 +514,99 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                       />
                     </div>
 
+                    {/* Contract Address (CA) */}
+                    <div className="rounded-lg border border-line bg-surface px-3.5 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label htmlFor="coin-ca" className="text-xs text-muted">
+                          Contract address (CA)
+                        </label>
+                        <div className="inline-flex rounded-md border border-line bg-card p-0.5 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setCaMode('auto')}
+                            className={`rounded px-2.5 py-1 transition ${
+                              caMode === 'auto'
+                                ? 'bg-ink font-medium text-page'
+                                : 'text-muted hover:text-ink'
+                            }`}
+                          >
+                            Auto-generate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCaMode('custom')}
+                            className={`rounded px-2.5 py-1 transition ${
+                              caMode === 'custom'
+                                ? 'bg-ink font-medium text-page'
+                                : 'text-muted hover:text-ink'
+                            }`}
+                          >
+                            Custom CA
+                          </button>
+                        </div>
+                      </div>
+
+                      {caMode === 'auto' ? (
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <input
+                            id="coin-ca"
+                            type="text"
+                            readOnly
+                            value={generatedMintKeypair?.publicKey.toBase58() || 'Generating CA...'}
+                            aria-label="Generated contract address"
+                            className="min-w-0 flex-1 rounded-md border border-line bg-card px-2.5 py-2 font-mono text-xs text-ink focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void regenerateMintKeypair()}
+                            title="Generate a new CA"
+                            aria-label="Generate a new CA"
+                            className="inline-flex items-center gap-1 rounded-md border border-line bg-card px-2.5 py-2 text-xs text-muted transition hover:border-line-strong hover:text-ink"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            New
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void copyCa(generatedMintKeypair?.publicKey.toBase58() || '')
+                            }
+                            disabled={!generatedMintKeypair}
+                            aria-label="Copy generated CA"
+                            className="inline-flex items-center gap-1 rounded-md border border-line bg-card px-2.5 py-2 text-xs text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40"
+                          >
+                            {copiedCa ? (
+                              <Check className="h-3.5 w-3.5 text-accent" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-2.5">
+                          <input
+                            id="coin-ca"
+                            type="text"
+                            value={customCa}
+                            onChange={(e) => setCustomCa(e.target.value)}
+                            placeholder="Paste Solana mint / contract address..."
+                            className="w-full rounded-md border border-line bg-card px-2.5 py-2 font-mono text-xs text-ink placeholder:text-muted focus:border-accent focus:outline-none"
+                          />
+                          <p
+                            className={`mt-1.5 text-[11px] ${
+                              customCa.trim() && !customCaValid ? 'text-accent' : 'text-muted'
+                            }`}
+                          >
+                            {!customCa.trim()
+                              ? 'Attach a custom or pre-created Solana mint address to this launch.'
+                              : customCaValid
+                              ? 'Valid Solana contract address.'
+                              : 'Enter a valid Base58 Solana contract address.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <input
                         type="url"
@@ -564,6 +752,34 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                 {step === 3 && (
                   <div className="space-y-5">
                     <div className="rounded-lg border border-line bg-surface px-4 py-4">
+                      <div className="mb-3 flex items-center justify-between gap-3 border-b border-line pb-3">
+                        <div>
+                          <span className="block font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+                            Contract address (CA)
+                          </span>
+                          <span className="mt-1 block font-mono text-xs text-ink">
+                            {shortAddress(activeCa, 8)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyCa(activeCa)}
+                          className="inline-flex items-center gap-1 rounded-md border border-line bg-card px-2.5 py-1 text-[11px] text-ink transition hover:border-line-strong"
+                        >
+                          {copiedCa ? (
+                            <>
+                              <Check className="h-3 w-3 text-accent" />
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" />
+                              Copy CA
+                            </>
+                          )}
+                        </button>
+                      </div>
+
                       <span className="block font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
                         Fee split
                       </span>
@@ -726,13 +942,20 @@ export const CreateLaunchModal: React.FC<CreateLaunchModalProps> = ({
                     {description.trim() || 'Your description will appear here once you write it.'}
                   </p>
 
-                  <div className="mt-4 flex items-center justify-between rounded-lg border border-line bg-surface px-2.5 py-2">
+                  <div className="mt-3 flex items-center justify-between rounded-lg border border-line bg-surface px-2.5 py-2">
                     <span className="truncate text-[11px] text-muted">
                       {selectedCharity?.name || 'Verified shelter'}
                     </span>
                     <span className="flex flex-shrink-0 items-center gap-1 font-mono text-[11px] text-accent">
                       {donationPercent}%
                       {isImmutable && <Lock className="h-3 w-3 text-muted" />}
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 flex items-center justify-between rounded-lg border border-line bg-surface px-2.5 py-1.5 font-mono text-[10px]">
+                    <span className="text-muted">CA</span>
+                    <span className="truncate text-ink">
+                      {activeCa ? shortAddress(activeCa, 5) : 'Pending'}
                     </span>
                   </div>
 

@@ -1,50 +1,57 @@
 @import "tailwindcss";
 
 @theme {
-  /* Minimal palette: paper white, near-black ink, one black accent. */
-  --color-page: #ffffff;
-  --color-surface: #f6f6f7;
+  /* Warm paper-cream minimal palette matching CatPad design system */
+  --color-page: #f5f4ef;
+  --color-surface: #eceae3;
   --color-card: #ffffff;
-  --color-card-hover: #fafafa;
-  --color-line: #e6e6e9;
-  --color-line-strong: #d2d2d8;
-  --color-ink: #0a0a0a;
-  --color-muted: #6e6e78;
-  --color-accent: #0a0a0a;
+  --color-card-hover: #fbfaf7;
+  --color-line: #e4e2d9;
+  --color-line-strong: #cfcdc3;
+  --color-ink: #111111;
+  --color-muted: #6c6c67;
+  --color-accent: #111111;
   --color-accent-hover: #2b2b30;
+  --color-gold: #e7b83c;
+  --color-sage: #6d8369;
 
-  --font-grotesk: "Space Grotesk", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-grotesk: "Plus Jakarta Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: "DM Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 @layer base {
   html {
     scroll-behavior: smooth;
-    background-color: #ffffff;
+    background-color: #f5f4ef;
     color-scheme: light;
   }
 
   body {
-    background-color: #ffffff;
-    color: #0a0a0a;
-    font-family: var(--font-grotesk);
+    background-color: #f5f4ef;
+    color: #111111;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
+  h1, h2, h3, h4, .font-grotesk {
+    font-family: var(--font-grotesk);
+  }
+
   ::selection {
-    background-color: #0a0a0a;
-    color: #ffffff;
+    background-color: #111111;
+    color: #f5f4ef;
   }
 
   :focus-visible {
-    outline: 2px solid #0a0a0a;
+    outline: 2px solid #111111;
     outline-offset: 2px;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #cfcfd6 #ffffff;
+    scrollbar-color: #cfcdc3 #f5f4ef;
   }
 
   ::-webkit-scrollbar {
@@ -53,16 +60,16 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: #ffffff;
+    background: #f5f4ef;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #d6d6dc;
+    background: #d2d0c6;
     border-radius: 999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #b9b9c1;
+    background: #b7b5aa;
   }
 
   input,
@@ -78,10 +85,10 @@
 --------------------------------------------------------------------------- */
 .reveal {
   opacity: 0;
-  transform: translateY(22px);
+  transform: translateY(20px);
   transition:
-    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 650ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 650ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: opacity, transform;
 }
 
@@ -91,12 +98,12 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Hero entrance + floating coin
+   Hero entrance + subtle float
 --------------------------------------------------------------------------- */
 @keyframes hero-fade-in {
   from {
     opacity: 0;
-    transform: translateY(28px);
+    transform: translateY(24px);
   }
   to {
     opacity: 1;
@@ -105,41 +112,108 @@
 }
 
 .hero-line {
-  animation: hero-fade-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: hero-fade-in 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .hero-line-2 {
-  animation-delay: 120ms;
+  animation-delay: 100ms;
 }
 .hero-line-3 {
-  animation-delay: 240ms;
+  animation-delay: 200ms;
 }
 .hero-fade {
-  animation: hero-fade-in 900ms cubic-bezier(0.16, 1, 0.3, 1) 380ms both;
+  animation: hero-fade-in 800ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
 }
 
 @keyframes coin-float {
   0%,
   100% {
-    transform: translateY(0) rotate(0deg);
+    transform: translateY(0px);
   }
   50% {
-    transform: translateY(-14px) rotate(3deg);
+    transform: translateY(-7px);
   }
 }
 
 .coin-float {
-  animation: coin-float 7s ease-in-out infinite;
+  animation: coin-float 6s ease-in-out infinite;
+}
+
+@keyframes coin-fall-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-135px) scale(0.86) rotate(var(--coin-rot-start, -24deg));
+  }
+  16% {
+    opacity: 1;
+  }
+  68% {
+    opacity: 1;
+    transform: translateY(0px) scale(1.02) rotate(var(--coin-rot-end, 8deg));
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-12px) scale(0.99) rotate(calc(var(--coin-rot-end, 8deg) - 4deg));
+  }
+  91% {
+    opacity: 0.95;
+    transform: translateY(2px) scale(1) rotate(var(--coin-rot-end, 8deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96) rotate(var(--coin-rot-end, 8deg));
+  }
+}
+
+.coin-fall-drop {
+  animation: coin-fall-drop 760ms cubic-bezier(0.38, 0, 0.72, 0.95) forwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes bowl-cushioned-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  35% {
+    transform: translateY(4px) scale(1.014, 0.986);
+  }
+  70% {
+    transform: translateY(-1.5px) scale(0.996, 1.004);
+  }
+}
+
+.bowl-cushioned-bounce {
+  animation: bowl-cushioned-bounce 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 50% 82%;
+}
+
+@keyframes coin-impact-ring {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+.coin-impact-ring {
+  animation: coin-impact-ring 460ms ease-out forwards;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 @keyframes status-pulse {
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(10, 10, 10, 0.35);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
   }
   50% {
-    opacity: 0.6;
-    box-shadow: 0 0 0 5px rgba(10, 10, 10, 0);
+    opacity: 0.7;
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
   }
 }
 
@@ -147,30 +221,11 @@
   animation: status-pulse 2s ease-in-out infinite;
 }
 
-/* Scroll indicator */
-@keyframes scroll-hint {
-  0% {
-    transform: translateY(-4px);
-    opacity: 0.2;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(8px);
-    opacity: 0.2;
-  }
-}
-
-.scroll-hint {
-  animation: scroll-hint 1.8s ease-in-out infinite;
-}
-
-/* Skeleton breathe (flat, no gradient glows) */
+/* Skeleton breathe */
 @keyframes skeleton-breathe {
   0%,
   100% {
-    opacity: 0.5;
+    opacity: 0.55;
   }
   50% {
     opacity: 0.9;
@@ -178,7 +233,7 @@
 }
 
 .skeleton {
-  background-color: #ededf0;
+  background-color: #e9e7df;
   animation: skeleton-breathe 1.6s ease-in-out infinite;
 }
 
@@ -227,7 +282,6 @@
   transition: transform 180ms ease-out;
 }
 
-/* Ears twitch now and then while the cat is idle */
 @keyframes cat-ear-twitch-l {
   0%,
   88%,
@@ -270,7 +324,6 @@
   animation: cat-ear-twitch-r 10.2s ease-in-out infinite 1.6s;
 }
 
-/* The pet itself: a squish followed by a small settle, like a real cat leaning in */
 @keyframes cat-react {
   0% {
     transform: translate(0, 0) rotate(0deg) scale(1);
@@ -297,7 +350,6 @@
   transform-origin: 50% 85%;
 }
 
-/* The purr: a fast, tiny tremble across the whole cat */
 @keyframes cat-purr-jitter {
   0%,
   100% {
@@ -317,7 +369,6 @@
   transform-origin: center;
 }
 
-/* Eyes shut almost immediately, stay shut for the purr, open at the end */
 @keyframes cat-close-eyes {
   0% {
     transform: scaleY(1);
@@ -337,7 +388,6 @@
   animation: cat-close-eyes 1400ms ease-in-out;
 }
 
-/* The head dips into the hand and stays there */
 @keyframes cat-bow {
   0% {
     transform: none;
@@ -365,7 +415,6 @@
   transform-origin: 50% 94%;
 }
 
-/* Ears flatten back while it purrs */
 @keyframes cat-flag-l {
   0%,
   8% {
@@ -406,7 +455,6 @@
   animation: cat-flag-r 1400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Little sound-wave bars next to "purr" */
 @keyframes purr-bar {
   0%,
   100% {
@@ -443,7 +491,7 @@
   animation: heart-rise 1.3s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
-/* Navbar logo: the 16-frame sprite sheet, one step per frame */
+/* Navbar logo sprite */
 @keyframes cat-logo-blink {
   0% {
     background-position: 0% 0%;
@@ -505,8 +553,6 @@
   animation: cat-logo-blink 3.2s steps(1, end) infinite;
 }
 
-/* The sheet's gold eyes are empty; these pupils sit inside them and follow the
-   pointer. They hide for the frames where the lids are shut. */
 @keyframes cat-logo-pupil-blink {
   0% {
     opacity: 1;
@@ -533,10 +579,15 @@
   border-radius: 9999px;
   background: #0a0a0a;
   transform: translate(
-    calc(-50% + var(--cat-gaze-x, 0) * 1.4px),
-    calc(-50% + var(--cat-gaze-y, 0) * 1.4px)
+    calc(-50% + var(--cat-gaze-x, 0) * var(--cat-gaze-range, 1.4px)),
+    calc(-50% + var(--cat-gaze-y, 0) * var(--cat-gaze-range, 1.4px))
   );
   transition: transform 90ms ease-out;
+}
+
+.cat-sprite-purring {
+  animation: cat-purr-jitter 88ms linear 13;
+  transform-origin: center;
 }
 
 /* Toast entrance */
@@ -570,8 +621,10 @@
   }
 
   .coin-float,
+  .coin-fall-drop,
+  .bowl-cushioned-bounce,
+  .coin-impact-ring,
   .status-dot,
-  .scroll-hint,
   .skeleton,
   .cat-body-idle,
   .cat-eyes,
@@ -583,6 +636,7 @@
   .cat-purring .cat-eyes,
   .cat-logo-sprite,
   .cat-logo-pupils,
+  .cat-sprite-purring,
   .purr-bar {
     animation: none !important;
   }

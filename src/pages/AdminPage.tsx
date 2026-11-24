@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { AdminAction, Charity, Launch, Donation } from '../types.ts';
+import { AdminAction, Charity, Launch, Donation, SiteBanner } from '../types.ts';
 import { useToast } from '../context/ToastContext.tsx';
+import { AnnouncementBanner } from '../components/AnnouncementBanner.tsx';
 import { 
   ShieldCheck, 
-  Lock, 
   Plus, 
   Edit3, 
   Trash2, 
@@ -17,6 +17,7 @@ import {
   RefreshCw,
   EyeOff,
   History,
+  Megaphone,
   X
 } from 'lucide-react';
 
@@ -24,6 +25,10 @@ interface AdminPageProps {
   charities: Charity[];
   launches: Launch[];
   donations: Donation[];
+  banner?: SiteBanner;
+  onBannerUpdated?: (banner: SiteBanner) => void;
+  adminToken: string;
+  onAdminTokenChange: (token: string) => void;
   onRefreshData: () => void;
 }
 
@@ -31,20 +36,39 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   charities,
   launches,
   donations,
+  banner,
+  onBannerUpdated,
+  adminToken,
+  onAdminTokenChange,
   onRefreshData,
 }) => {
   const { toast } = useToast();
 
-  const [adminToken, setAdminToken] = useState<string>(() => {
-    return localStorage.getItem('catpad_admin_token') || '';
-  });
   const [adminIdentifier, setAdminIdentifier] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Admin Sub-tab
-  const [adminTab, setAdminTab] = useState<'charities' | 'launches' | 'donations' | 'failures' | 'audit'>('charities');
+  const [adminTab, setAdminTab] = useState<'charities' | 'launches' | 'donations' | 'banner' | 'failures' | 'audit'>('charities');
+
+  // Top Announcement Banner state
+  const [bannerForm, setBannerForm] = useState<SiteBanner>({
+    text: banner?.text ?? 'CA dropping soon',
+    ca_address: banner?.ca_address ?? '',
+    enabled: banner?.enabled ?? true,
+  });
+  const [isSavingBanner, setIsSavingBanner] = useState(false);
+
+  useEffect(() => {
+    if (banner) {
+      setBannerForm({
+        text: banner.text,
+        ca_address: banner.ca_address ?? '',
+        enabled: banner.enabled,
+      });
+    }
+  }, [banner]);
 
   // Audit failures from server
   const [failures, setFailures] = useState<Array<{ id: string; type: string; details: string; timestamp: string }>>([]);
@@ -104,6 +128,16 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       .catch(() => {});
   }, [adminToken, launches]);
 
+  const readJsonSafe = async (res: Response): Promise<Record<string, any> | null> => {
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text) as Record<string, any>;
+    } catch {
+      return null;
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -115,13 +149,16 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: adminIdentifier, password: adminPassword }),
       });
-      const data = await res.json();
+      const data = await readJsonSafe(res);
+      if (!data) {
+        throw new Error(`Unexpected response from auth server (${res.status}). Make sure the backend API is running.`);
+      }
       if (!res.ok) {
         throw new Error(data.error || 'Invalid credentials');
       }
 
-      setAdminToken(data.token);
-      localStorage.setItem('catpad_admin_token', data.token);
+      setAdminPassword('');
+      onAdminTokenChange(data.token);
       onRefreshData();
     } catch (err: any) {
       setLoginError(err.message || 'Authentication failed');
@@ -131,8 +168,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   };
 
   const handleLogout = () => {
-    setAdminToken('');
-    localStorage.removeItem('catpad_admin_token');
+    onAdminTokenChange('');
   };
 
   /** Expired or forged sessions drop the token instead of looping on errors. */
@@ -231,6 +267,38 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
+  // Save Announcement Banner
+  const handleSaveBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingBanner(true);
+    try {
+      const res = await fetch('/api/admin/banner', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify(bannerForm),
+      });
+      const data = await readJsonSafe(res);
+      if (!res.ok) {
+        if (!handleUnauthorized(res.status)) {
+          toast(data?.error || `Could not update banner (${res.status})`, 'error');
+        }
+        return;
+      }
+      if (data?.banner) {
+        onBannerUpdated?.(data.banner);
+      }
+      onRefreshData();
+      toast('Announcement banner updated', 'success');
+    } catch {
+      toast('Failed to save announcement banner', 'error');
+    } finally {
+      setIsSavingBanner(false);
+    }
+  };
+
   // Save Charity (Create or Update)
   const handleSaveCharity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,13 +324,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         body: JSON.stringify(charityForm),
       });
 
-      const d = await res.json();
+      const d = await readJsonSafe(res);
       if (!res.ok) {
         if (handleUnauthorized(res.status)) {
           setShowCharityModal(false);
           return;
         }
-        throw new Error(d.error || 'Failed to save charity');
+        throw new Error(d?.error || `Failed to save charity (${res.status})`);
       }
 
       setShowCharityModal(false);
@@ -319,7 +387,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
         <h2 className="text-2xl font-semibold text-ink">CatPad Admin Portal</h2>
         <p className="text-xs text-muted mt-1 mb-6">
-          Server-side role checked administration. Add shelters, view launches, and monitor on-chain donations.
+          Server-side role checked administration. Add shelters, view launches, edit the banner, and monitor donations.
         </p>
 
         {loginError && (
@@ -335,7 +403,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </label>
             <input
               type="text"
-              placeholder="stud.disc"
+              required
+              placeholder="Enter admin identifier"
               autoComplete="username"
               value={adminIdentifier}
               onChange={(e) => setAdminIdentifier(e.target.value)}
@@ -349,6 +418,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </label>
             <input
               type="password"
+              required
               autoComplete="current-password"
               placeholder="Enter admin password"
               value={adminPassword}
@@ -358,14 +428,15 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </div>
 
           <div className="p-3 rounded-xl bg-page border border-line text-[11px] text-muted leading-relaxed">
-            Sign-in requires this deployment's admin identifier and password. Sessions last eight
-            hours; ask the site owner for the credentials.
+            Sessions are kept strictly in memory and expire after 8 hours. Configure{' '}
+            <code className="font-mono text-ink">ADMIN_USERNAME</code> and{' '}
+            <code className="font-mono text-ink">ADMIN_SECRET_KEY</code> in Settings → Secrets.
           </div>
 
           <button
             type="submit"
             disabled={isLoggingIn}
-            className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-page font-bold text-sm  transition disabled:opacity-50 cursor-pointer"
+            className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-page font-bold text-sm transition disabled:opacity-50 cursor-pointer"
           >
             {isLoggingIn ? 'Verifying with Server...' : 'Access Admin Dashboard'}
           </button>
@@ -434,7 +505,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-line gap-4 text-xs font-bold">
+      <div className="flex flex-wrap border-b border-line gap-4 text-xs font-bold">
         <button
           onClick={() => setAdminTab('charities')}
           className={`pb-3 transition ${
@@ -458,6 +529,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           }`}
         >
           Donations ({donations.length})
+        </button>
+        <button
+          onClick={() => setAdminTab('banner')}
+          className={`pb-3 transition ${
+            adminTab === 'banner' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
+          }`}
+        >
+          Banner
         </button>
         <button
           onClick={() => setAdminTab('failures')}
@@ -687,6 +766,105 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* TAB 4: ANNOUNCEMENT BANNER */}
+      {adminTab === 'banner' && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-ink flex items-center gap-2">
+                <Megaphone className="w-4 h-4 text-accent" />
+                <span>Top Announcement Banner</span>
+              </h3>
+              <p className="text-xs text-muted mt-0.5">
+                Controls the slim announcement strip at the very top of the site.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-line bg-card">
+            <div className="border-b border-line bg-surface px-4 py-2 text-[11px] font-mono uppercase tracking-wider text-muted">
+              Live preview
+            </div>
+            {bannerForm.enabled && bannerForm.text.trim() ? (
+              <AnnouncementBanner banner={bannerForm} />
+            ) : (
+              <div className="px-4 py-3 text-center text-xs text-muted">
+                Banner is currently hidden.
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={handleSaveBanner} className="space-y-4 rounded-xl border border-line bg-card p-5 text-xs">
+            <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-line bg-page px-4 py-3">
+              <div>
+                <span className="block font-semibold text-ink">Show top banner</span>
+                <span className="block text-[11px] text-muted">
+                  Toggle visibility for all visitors across the site.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={bannerForm.enabled}
+                onChange={(e) => setBannerForm((prev) => ({ ...prev, enabled: e.target.checked }))}
+                className="h-4 w-4 accent-ink"
+              />
+            </label>
+
+            <div>
+              <label className="mb-1 block font-semibold text-muted">
+                Banner message *
+              </label>
+              <input
+                type="text"
+                maxLength={160}
+                placeholder="CA dropping soon"
+                value={bannerForm.text}
+                onChange={(e) => setBannerForm((prev) => ({ ...prev, text: e.target.value }))}
+                className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block font-semibold text-muted">
+                Contract address (CA) — optional
+              </label>
+              <input
+                type="text"
+                maxLength={64}
+                placeholder="Paste Solana mint / CA once live (shows a copyable badge)"
+                value={bannerForm.ca_address ?? ''}
+                onChange={(e) => setBannerForm((prev) => ({ ...prev, ca_address: e.target.value }))}
+                className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 font-mono text-xs text-ink outline-none focus:border-ink"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setBannerForm({
+                    text: 'CA dropping soon',
+                    ca_address: '',
+                    enabled: true,
+                  })
+                }
+                className="rounded-xl border border-line bg-surface px-3.5 py-2 font-semibold text-muted transition hover:text-ink"
+              >
+                Reset to &ldquo;CA dropping soon&rdquo;
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSavingBanner}
+                className="rounded-xl bg-accent px-5 py-2.5 font-bold text-page transition hover:bg-accent-hover disabled:opacity-50"
+              >
+                {isSavingBanner ? 'Saving...' : 'Save banner'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

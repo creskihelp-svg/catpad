@@ -23,6 +23,7 @@ export const BRAND = {
     catSprite: '/brand/cat-sprite.png',
     logo: '/brand/logo.svg',
     coin: '/brand/coin.png',
+    coinSprite: '/assets/aistudio/file_0000000027ac820a9af0716a0dc69f90_552190cc.png',
     heroVideo: '/brand/hero.mp4',
     heroPoster: '/brand/hero-poster.png',
   },

@@ -19,7 +19,8 @@ interface WalletContextType {
   requestDevnetAirdrop: () => Promise<string | null>;
   disconnect: () => void;
   signAndSendLaunchTransaction: (instructionsData: {
-    mintKeypair: any;
+    mintKeypair?: any;
+    customMint?: string;
     charityWallet: string;
     donationBps: number;
     initialBuySol: number;
@@ -189,10 +190,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   /**
    * Builds and signs the Solana transaction for a launch:
-   * token mint keypair + proof-of-launch transfer to the charity wallet.
+   * references the token CA (mintKeypair or customMint) + proof-of-launch transfer to the charity wallet.
    */
   const signAndSendLaunchTransaction = async (data: {
-    mintKeypair: any;
+    mintKeypair?: any;
+    customMint?: string;
     charityWallet: string;
     donationBps: number;
     initialBuySol: number;
@@ -203,42 +205,58 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     const charityPubkey = new PublicKey(data.charityWallet);
-    const mintPubkey = data.mintKeypair.publicKey;
+    const mintPubkey = data.customMint
+      ? new PublicKey(data.customMint.trim())
+      : data.mintKeypair?.publicKey;
+
+    if (!mintPubkey) {
+      throw new Error('Contract address (CA) or mint keypair is required');
+    }
 
     const tx = new Transaction();
     const { blockhash } = await connection.getLatestBlockhash('confirmed');
     tx.recentBlockhash = blockhash;
     tx.feePayer = publicKey;
 
-    if (data.initialBuySol > 0) {
-      const lamports = Math.floor(data.initialBuySol * Number(LAMPORTS_PER_SOL));
-      tx.add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: charityPubkey,
-          lamports: Math.min(lamports, 1000000),
-        })
-      );
-    } else {
-      tx.add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: charityPubkey,
-          lamports: 1000,
-        })
-      );
+    const transferLamports =
+      data.initialBuySol > 0
+        ? Math.min(Math.floor(data.initialBuySol * Number(LAMPORTS_PER_SOL)), 1000000)
+        : 1000;
+
+    const ix = SystemProgram.transfer({
+      fromPubkey: publicKey,
+      toPubkey: charityPubkey,
+      lamports: transferLamports,
+    });
+
+    // Attach the coin CA to the instruction accountKeys so on-chain verification confirms this coin
+    const shouldCoSignMint = Boolean(data.mintKeypair && !data.customMint);
+    if (!mintPubkey.equals(publicKey) && !mintPubkey.equals(charityPubkey)) {
+      ix.keys.push({
+        pubkey: mintPubkey,
+        isSigner: shouldCoSignMint,
+        isWritable: false,
+      });
     }
+
+    tx.add(ix);
 
     let signature = '';
 
     if (walletType === 'generated' && generatedKeypair) {
-      tx.sign(generatedKeypair, data.mintKeypair);
+      if (shouldCoSignMint && data.mintKeypair) {
+        tx.sign(generatedKeypair, data.mintKeypair);
+      } else {
+        tx.sign(generatedKeypair);
+      }
       signature = await sendAndConfirm(tx);
     } else {
       const provider = providerRef.current;
       if (!provider?.signTransaction) throw new Error('Wallet cannot sign transactions');
 
-      tx.partialSign(data.mintKeypair);
+      if (shouldCoSignMint && data.mintKeypair) {
+        tx.partialSign(data.mintKeypair);
+      }
       const signedTx = await provider.signTransaction(tx);
       signature = await sendAndConfirm(signedTx);
     }

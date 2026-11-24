@@ -11,7 +11,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const getPort = (): number => {
+  const idx = process.argv.indexOf('--port');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    const parsed = Number(process.argv[idx + 1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return Number(process.env.PORT) || 3000;
+};
+
+const PORT = getPort();
 
 /**
  * Local development is a thin Node adapter around the same edge worker that is
@@ -21,10 +30,8 @@ const PORT = Number(process.env.PORT) || 3000;
  */
 const env = {
   ...process.env,
-  ADMIN_SECRET_KEY:
-    process.env.ADMIN_SECRET_KEY?.trim() ||
-    (process.env.NODE_ENV === 'production' ? '' : 'catpad-admin-key-2026'),
-  ADMIN_USERNAME: process.env.ADMIN_USERNAME?.trim() || 'stud.disc',
+  ADMIN_SECRET_KEY: process.env.ADMIN_SECRET_KEY?.trim() || '',
+  ADMIN_USERNAME: process.env.ADMIN_USERNAME?.trim() || '',
   SOLANA_NETWORK: process.env.SOLANA_NETWORK || 'devnet',
   ASSETS: { fetch: async () => new Response('Not found', { status: 404 }) },
 };
@@ -40,7 +47,11 @@ const toRequest = async (req: ExpressRequest): Promise<Request> => {
     else if (value !== undefined) headers.set(key, value);
   });
 
-  return new Request(`http://${req.headers.host}${req.originalUrl}`, {
+  const forwardedHost = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
+  const forwardedProto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() || 'http';
+  const host = forwardedHost || req.headers.host || 'localhost';
+
+  return new Request(`${forwardedProto}://${host}${req.originalUrl}`, {
     method: req.method,
     headers,
     body: body as BodyInit | undefined,
@@ -65,7 +76,7 @@ async function startServer() {
   if (isDev) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -76,9 +87,24 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`CatPad server running on port ${PORT} [${env.SOLANA_NETWORK}]`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`CatPad server running on http://0.0.0.0:${PORT} [${env.SOLANA_NETWORK}]`);
   });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Port ${PORT} is already in use.`);
+    } else {
+      console.error('Server error:', err);
+      process.exit(1);
+    }
+  });
+
+  const shutdown = () => {
+    server.close(() => process.exit(0));
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer();

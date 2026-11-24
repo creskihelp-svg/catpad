@@ -83,3 +83,11 @@ export interface AdminSession {
   email: string;
   role: string;
 }
+
+export interface SiteBanner {
+  text: string;
+  ca_address?: string;
+  enabled: boolean;
+  updated_at?: string;
+}
+

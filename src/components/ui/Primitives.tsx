@@ -139,15 +139,15 @@ export const SoonBadge: React.FC<{ className?: string }> = ({ className }) => (
   </span>
 );
 
-/** "Live on Solana" indicator with a pulsing dot. */
+/** "Live on Solana" indicator with a live RPC telemetry dot. */
 export const StatusChip: React.FC<{ online: boolean; network: string }> = ({ online, network }) => {
   const label = network === 'mainnet-beta' ? 'Live on Solana' : `Live on ${network}`;
   return (
-    <span className="hidden items-center gap-2 rounded-md border border-line px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted sm:inline-flex">
+    <span className="hidden items-center gap-2 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted sm:inline-flex whitespace-nowrap shrink-0">
       <span
         className={classNames(
           'h-1.5 w-1.5 rounded-full',
-          online ? 'status-dot bg-accent' : 'bg-line-strong'
+          online ? 'status-dot bg-emerald-500' : 'bg-line-strong'
         )}
       />
       {online ? label : 'RPC offline'}

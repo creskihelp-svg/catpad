@@ -23,10 +23,16 @@ import {
   registerWriteAttempt,
   logAdminAction,
   readAdminActions,
+  readBannerSetting,
+  writeBannerSetting,
 } from './db.ts';
 import type { DbEnv } from './db.ts';
-import type { AdminAction, Charity, Donation, Launch } from '../src/types.ts';
-import { createSession, timingSafeEqual, verifySession } from './session.ts';
+import type { AdminAction, Charity, Donation, Launch, SiteBanner } from '../src/types.ts';
+import {
+  constantTimeDigestEqual,
+  createSession,
+  verifySession,
+} from './session.ts';
 import { isSignature, isSolanaAddress, networkName, rpcUrl, verifyTransaction } from './solana.ts';
 import { reportError } from './report.ts';
 
@@ -50,13 +56,16 @@ const launches: Launch[] = [];
 const donations: Donation[] = [];
 const adminActions: AdminAction[] = [];
 const auditFailures: Array<{ id: string; type: string; details: string; timestamp: string }> = [];
+let siteBanner: SiteBanner = {
+  text: 'CA dropping soon',
+  ca_address: '',
+  enabled: true,
+  updated_at: new Date().toISOString(),
+};
 
-/** Undefined until the deployment is given a real ADMIN_SECRET_KEY secret. */
+/** Configured via server env (Settings -> Secrets). */
 const adminKey = (env: AppEnv) => env.ADMIN_SECRET_KEY?.trim() || '';
-
-/** Admin identifier; identifiers are case-insensitive and never secret. */
-const ADMIN_USERNAME_DEFAULT = 'stud.disc';
-const adminUsername = (env: AppEnv) => env.ADMIN_USERNAME?.trim() || ADMIN_USERNAME_DEFAULT;
+const adminUsername = (env: AppEnv) => env.ADMIN_USERNAME?.trim() || '';
 const normalizeIdentifier = (value: string) => value.trim().toLowerCase();
 
 const json = (data: unknown, status = 200) =>
@@ -177,14 +186,16 @@ const recordAdminAction = async (env: AppEnv, action: string, target: string, de
  */
 async function hydrate(env: AppEnv) {
   try {
-    const [charityRows, launchRows, donationRows] = await Promise.all([
+    const [charityRows, launchRows, donationRows, bannerRow] = await Promise.all([
       readCharities(env),
       readLaunches(env),
       readDonations(env),
+      readBannerSetting(env),
     ]);
     if (charityRows) charities.splice(0, charities.length, ...charityRows);
     if (launchRows) launches.splice(0, launches.length, ...launchRows);
     if (donationRows) donations.splice(0, donations.length, ...donationRows);
+    if (bannerRow) siteBanner = bannerRow;
   } catch (error) {
     reportError(env, error, { scope: 'hydrate' });
   }
@@ -252,11 +263,11 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
   const segments = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
 
   // Only the routes that read or write persisted data need the database.
-  if (['charities', 'admin', 'donations', 'pump', 'launches'].includes(segments[0] ?? '')) {
+  if (['charities', 'admin', 'donations', 'pump', 'launches', 'banner'].includes(segments[0] ?? '')) {
     await hydrate(env);
   }
 
-  // --- status -------------------------------------------------------------
+  // --- status & banner ----------------------------------------------------
   if (path === '/api/network-status') {
     return json({
       network: networkName(env),
@@ -265,6 +276,10 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
       pumpFunProgramId: PUMPFUN_PROGRAM_ID,
       pumpFeesProgramId: PUMPFEES_PROGRAM_ID,
     });
+  }
+
+  if (path === '/api/banner' && method === 'GET') {
+    return json({ banner: siteBanner });
   }
 
   // --- charities ----------------------------------------------------------
@@ -481,9 +496,17 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
         return json({ error: 'Too many sign-in attempts. Try again in a few minutes.' }, 429);
       }
 
-      const secret = adminKey(env);
-      if (!secret) {
-        return json({ error: 'Admin sign-in is not configured on this deployment' }, 503);
+      const envSecret = adminKey(env);
+      const envUser = adminUsername(env);
+
+      if (!envSecret || !envUser) {
+        return json(
+          {
+            error:
+              'Admin credentials are not configured on the server. Set ADMIN_USERNAME and ADMIN_SECRET_KEY in Settings → Secrets.',
+          },
+          503,
+        );
       }
 
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -497,13 +520,11 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
               : '';
       const supplied = typeof body.password === 'string' ? body.password : '';
 
-      // Both are always compared, and the same error is returned either way, so
-      // a wrong identifier cannot be told apart from a wrong password.
-      const identifierOk = timingSafeEqual(
+      const identifierOk = await constantTimeDigestEqual(
         normalizeIdentifier(rawIdentifier),
-        normalizeIdentifier(adminUsername(env)),
+        normalizeIdentifier(envUser),
       );
-      const passwordOk = timingSafeEqual(supplied, secret);
+      const passwordOk = await constantTimeDigestEqual(supplied, envSecret);
 
       if (!identifierOk || !passwordOk) {
         await noteFailedLogin(request, env);
@@ -515,8 +536,8 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
 
       return json({
         success: true,
-        token: await createSession(secret),
-        user: { email: adminUsername(env), role: 'superadmin' },
+        token: await createSession(envSecret),
+        user: { email: envUser, role: 'superadmin' },
       });
     }
 
@@ -542,6 +563,34 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
     // Every launch, including hidden ones.
     if (method === 'GET' && segments[1] === 'launches' && segments.length === 2) {
       return json({ launches });
+    }
+
+    if (segments[1] === 'banner' && (method === 'PUT' || method === 'POST')) {
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const nextText = sanitize(body.text).slice(0, 160);
+      const nextCa = sanitize(body.ca_address).slice(0, 64);
+      const nextEnabled = body.enabled === undefined ? siteBanner.enabled : Boolean(body.enabled);
+
+      if (nextEnabled && !nextText) {
+        return json({ error: 'Banner text cannot be empty when the banner is enabled' }, 400);
+      }
+
+      siteBanner = {
+        text: nextText || 'CA dropping soon',
+        ca_address: nextCa,
+        enabled: nextEnabled,
+        updated_at: new Date().toISOString(),
+      };
+      await writeBannerSetting(env, siteBanner);
+      await recordAdminAction(
+        env,
+        'banner.update',
+        'site_banner',
+        siteBanner.enabled
+          ? `"${siteBanner.text}"${siteBanner.ca_address ? ` (${siteBanner.ca_address})` : ''}`
+          : 'Banner hidden',
+      );
+      return json({ success: true, banner: siteBanner });
     }
 
     if (segments[1] === 'launches' && segments[3] === 'toggle-featured' && method === 'POST') {
@@ -647,7 +696,14 @@ export default {
 
       // Mutations are same-origin only.
       const origin = request.headers.get('origin');
-      if (request.method !== 'GET' && origin && new URL(origin).host !== url.host) {
+      const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+      const originHost = origin ? new URL(origin).host : null;
+      if (
+        request.method !== 'GET' &&
+        originHost &&
+        originHost !== url.host &&
+        (!forwardedHost || originHost !== forwardedHost)
+      ) {
         return json({ error: 'Cross-origin request blocked' }, 403);
       }
 

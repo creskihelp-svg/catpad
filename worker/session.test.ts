@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createSession, SESSION_TTL_MS, timingSafeEqual, verifySession } from './session.ts';
+import {
+  constantTimeDigestEqual,
+  createSession,
+  hashPassword,
+  SESSION_TTL_MS,
+  timingSafeEqual,
+  verifyPassword,
+  verifySession,
+} from './session.ts';
 
 const secret = 'test-admin-password';
 
@@ -43,3 +51,19 @@ describe('timingSafeEqual', () => {
     expect(timingSafeEqual('', '')).toBe(true);
   });
 });
+
+describe('PBKDF2 password hashing and constant-time comparison', () => {
+  it('hashes and verifies matching passwords while rejecting mismatches', async () => {
+    const record = await hashPassword('sample-passphrase-123');
+    expect(record.salt).toHaveLength(32);
+    expect(record.hash).toHaveLength(64);
+    expect(await verifyPassword('sample-passphrase-123', record)).toBe(true);
+    expect(await verifyPassword('wrong-passphrase', record)).toBe(false);
+  });
+
+  it('compares arbitrary-length strings via fixed-length digests', async () => {
+    expect(await constantTimeDigestEqual('alpha', 'alpha')).toBe(true);
+    expect(await constantTimeDigestEqual('alpha', 'alpha-longer')).toBe(false);
+  });
+});
+

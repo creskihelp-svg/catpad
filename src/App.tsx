@@ -8,6 +8,7 @@ import { WalletProvider } from './context/WalletContext.tsx';
 import { ToastProvider } from './context/ToastContext.tsx';
 import { SoundProvider } from './context/SoundContext.tsx';
 import { Navbar } from './components/Navbar.tsx';
+import { AnnouncementBanner } from './components/AnnouncementBanner.tsx';
 import { Footer } from './components/Footer.tsx';
 import { ExplorePage } from './pages/ExplorePage.tsx';
 import { CharitiesPage } from './pages/CharitiesPage.tsx';
@@ -18,7 +19,7 @@ import { NotFoundPage } from './pages/NotFoundPage.tsx';
 import { CreateLaunchModal } from './components/CreateLaunchModal.tsx';
 import { TokenDetailModal } from './components/TokenDetailModal.tsx';
 import { DirectDonationModal } from './components/DirectDonationModal.tsx';
-import { Charity, Donation, Launch, Tab } from './types.ts';
+import { Charity, Donation, Launch, SiteBanner, Tab } from './types.ts';
 
 const PATH_TO_TAB: Record<string, Tab> = {
   '/': 'explore',
@@ -64,7 +65,21 @@ export function AppContent() {
   const [launches, setLaunches] = useState<Launch[]>([]);
   const [charities, setCharities] = useState<Charity[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
+  const [banner, setBanner] = useState<SiteBanner>({
+    text: 'CA dropping soon',
+    ca_address: '',
+    enabled: true,
+  });
+  const [adminToken, setAdminToken] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem('catpad_admin_token');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<Launch | null>(null);
@@ -72,21 +87,24 @@ export function AppContent() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [launchesRes, charitiesRes, donationsRes] = await Promise.all([
+      const [launchesRes, charitiesRes, donationsRes, bannerRes] = await Promise.all([
         fetch('/api/launches'),
         fetch('/api/charities'),
         fetch('/api/donations'),
+        fetch('/api/banner'),
       ]);
 
-      const [launchesData, charitiesData, donationsData] = await Promise.all([
+      const [launchesData, charitiesData, donationsData, bannerData] = await Promise.all([
         launchesRes.json(),
         charitiesRes.json(),
         donationsRes.json(),
+        bannerRes.json().catch(() => ({})),
       ]);
 
       if (launchesData.launches) setLaunches(launchesData.launches);
       if (charitiesData.charities) setCharities(charitiesData.charities);
       if (donationsData.donations) setDonations(donationsData.donations);
+      if (bannerData.banner) setBanner(bannerData.banner);
     } catch (err) {
       console.warn('Failed to fetch protocol data:', err);
     } finally {
@@ -159,7 +177,13 @@ export function AppContent() {
 
   return (
     <div className="flex min-h-screen flex-col bg-page text-ink">
-      <Navbar currentTab={currentTab} setCurrentTab={navigate} openLaunchModal={() => setIsLaunchModalOpen(true)} />
+      <AnnouncementBanner banner={banner} />
+      <Navbar
+        currentTab={currentTab}
+        setCurrentTab={navigate}
+        openLaunchModal={() => setIsLaunchModalOpen(true)}
+        hasAdminSession={Boolean(adminToken)}
+      />
 
       <main className="flex-1">
         {notFound ? (
@@ -170,9 +194,11 @@ export function AppContent() {
               <ExplorePage
                 launches={launches}
                 charities={charities}
+                donations={donations}
                 isLoading={isLoading}
                 onSelectToken={setSelectedToken}
                 openLaunchModal={() => setIsLaunchModalOpen(true)}
+                onNavigate={navigate}
               />
             )}
 
@@ -201,6 +227,10 @@ export function AppContent() {
                 charities={charities}
                 launches={launches}
                 donations={donations}
+                banner={banner}
+                onBannerUpdated={setBanner}
+                adminToken={adminToken}
+                onAdminTokenChange={setAdminToken}
                 onRefreshData={fetchData}
               />
             )}
