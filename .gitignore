@@ -11,3 +11,6 @@ coverage/
 !.env.example
 
 .secrets/
+
+# Scratch scripts and throwaway devnet keys used for local smoke tests.
+.tmp/
