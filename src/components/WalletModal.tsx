@@ -5,10 +5,12 @@ import {
   ExternalLink,
   LogOut,
   Coins,
+  KeyRound,
   Wallet as WalletIcon,
   X,
   Download,
 } from 'lucide-react';
+import bs58 from 'bs58';
 import { useWallet } from '../context/WalletContext.tsx';
 import { useToast } from '../context/ToastContext.tsx';
 import { WALLET_OPTIONS, WalletLogo, isWalletDetected } from '../lib/wallets.tsx';
@@ -20,6 +22,90 @@ interface WalletModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+/**
+ * Accepts the formats a devnet key is normally exported in: the base58 string
+ * this app generates, or the JSON byte array that `solana-keygen` and Phantom
+ * produce. The decoded secret is handed straight to the wallet context and kept
+ * in memory only — nothing is written to storage.
+ */
+const normalizeSecretKey = (input: string): string | null => {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('[')) {
+    try {
+      const bytes = JSON.parse(trimmed);
+      if (!Array.isArray(bytes) || bytes.length === 0) return null;
+      if (!bytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)) return null;
+      return bs58.encode(Uint8Array.from(bytes));
+    } catch {
+      return null;
+    }
+  }
+  return trimmed;
+};
+
+/** Import a devnet key funded outside the app so signing still happens in the browser. */
+const DevnetKeyImport: React.FC<{ onImported: () => void }> = ({ onImported }) => {
+  const { importPrivateKey } = useWallet();
+  const { toast } = useToast();
+  const [secret, setSecret] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleImport = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalized = normalizeSecretKey(secret);
+    if (!normalized) {
+      setError('Paste a base58 secret key or a JSON byte array.');
+      return;
+    }
+    setImporting(true);
+    const ok = await importPrivateKey(normalized);
+    setImporting(false);
+    if (!ok) {
+      setError('That key could not be read. Check you pasted the secret key, not the address.');
+      return;
+    }
+    setSecret('');
+    setError(null);
+    toast('Devnet test wallet imported', 'success');
+    onImported();
+  };
+
+  return (
+    <form onSubmit={handleImport} className="space-y-2">
+      <label htmlFor="devnet-secret" className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+        Import a funded devnet key
+      </label>
+      <input
+        id="devnet-secret"
+        type="password"
+        value={secret}
+        onChange={(event) => {
+          setSecret(event.target.value);
+          if (error) setError(null);
+        }}
+        placeholder="Base58 secret key or [byte,array]"
+        autoComplete="off"
+        spellCheck={false}
+        className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-xs text-ink outline-none transition placeholder:text-muted focus:border-accent"
+      />
+      {error && <p className="text-[11px] leading-relaxed text-accent">{error}</p>}
+      <button
+        type="submit"
+        disabled={importing || !secret.trim()}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-4 py-2.5 text-sm font-medium text-ink transition hover:border-accent disabled:opacity-60"
+      >
+        <KeyRound className="h-4 w-4 text-accent" />
+        {importing ? 'Reading key...' : 'Use this key'}
+      </button>
+      <p className="text-[11px] leading-relaxed text-muted">
+        Held in memory for this tab only and cleared on disconnect or reload.
+      </p>
+    </form>
+  );
+};
 
 export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
   const {
@@ -179,6 +265,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                     Local only
                   </span>
                 </button>
+                <div className="mt-2">
+                  <DevnetKeyImport onImported={onClose} />
+                </div>
               </div>
             )}
 
@@ -230,6 +319,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                 <Coins className="h-4 w-4 text-accent" />
                 {airdropLoading ? 'Requesting SOL...' : 'Request 1 devnet SOL'}
               </button>
+            )}
+
+            {DEVNET_WALLET_ENABLED && walletType === 'generated' && (
+              <div className="rounded-lg border border-dashed border-line-strong p-3">
+                <DevnetKeyImport onImported={onClose} />
+              </div>
             )}
 
             <a
