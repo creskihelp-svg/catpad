@@ -25,12 +25,16 @@ import {
   readAdminActions,
   readBannerSetting,
   writeBannerSetting,
+  readAdminClaim,
+  writeAdminClaim,
 } from './db.ts';
-import type { DbEnv } from './db.ts';
+import type { DbEnv, StoredAdminClaim } from './db.ts';
 import type { AdminAction, Charity, Donation, Launch, SiteBanner } from '../src/types.ts';
 import {
   constantTimeDigestEqual,
   createSession,
+  hashPassword,
+  verifyPassword,
   verifySession,
 } from './session.ts';
 import { isSignature, isSolanaAddress, networkName, rpcUrl, verifyTransaction } from './solana.ts';
@@ -59,14 +63,36 @@ const auditFailures: Array<{ id: string; type: string; details: string; timestam
 let siteBanner: SiteBanner = {
   text: 'CA dropping soon',
   ca_address: '',
+  ca_url: '',
   enabled: true,
   updated_at: new Date().toISOString(),
 };
 
-/** Configured via server env (Settings -> Secrets). */
+/** Configured via server env (Settings -> Secrets or .env). */
 const adminKey = (env: AppEnv) => env.ADMIN_SECRET_KEY?.trim() || '';
 const adminUsername = (env: AppEnv) => env.ADMIN_USERNAME?.trim() || '';
 const normalizeIdentifier = (value: string) => value.trim().toLowerCase();
+
+let claimedAdmin: StoredAdminClaim | null = null;
+
+const randomSessionSecret = (): string => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+const resolveClaimedAdmin = async (env: AppEnv): Promise<StoredAdminClaim | null> => {
+  if (claimedAdmin) return claimedAdmin;
+  const stored = await readAdminClaim(env);
+  if (stored) claimedAdmin = stored;
+  return claimedAdmin;
+};
+
+const activeSessionSecret = async (env: AppEnv): Promise<string> => {
+  const envSecret = adminKey(env);
+  if (envSecret) return envSecret;
+  const claim = await resolveClaimedAdmin(env);
+  return claim?.sessionSecret || '';
+};
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -77,6 +103,18 @@ const json = (data: unknown, status = 200) =>
 const sanitize = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/[<>]/g, '').trim() : '';
 
+const sanitizeHttpUrl = (value: unknown): string | null => {
+  const raw = sanitize(value).slice(0, 300);
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 const bearer = (request: Request) => {
   const header = request.headers.get('authorization');
   return header ? header.replace(/^Bearer\s+/i, '').trim() : null;
@@ -85,7 +123,9 @@ const bearer = (request: Request) => {
 const isAdmin = async (request: Request, env: AppEnv) => {
   const token = bearer(request);
   if (!token) return false;
-  return verifySession(adminKey(env), token);
+  const secret = await activeSessionSecret(env);
+  if (!secret) return false;
+  return verifySession(secret, token);
 };
 
 const clientIp = (request: Request) =>
@@ -491,22 +531,66 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
 
   // --- admin --------------------------------------------------------------
   if (segments[0] === 'admin') {
+    if (method === 'GET' && segments[1] === 'status') {
+      const envReady = Boolean(adminKey(env) && adminUsername(env));
+      const claim = envReady ? null : await resolveClaimedAdmin(env);
+      return json({
+        configured: envReady || Boolean(claim),
+        setupRequired: !envReady && !claim,
+      });
+    }
+
+    if (method === 'POST' && segments[1] === 'setup') {
+      if (await signInBlocked(request, env)) {
+        return json({ error: 'Too many attempts. Try again in a few minutes.' }, 429);
+      }
+      if (adminKey(env) && adminUsername(env)) {
+        return json({ error: 'Admin credentials are already configured via environment variables' }, 403);
+      }
+      if (await resolveClaimedAdmin(env)) {
+        return json({ error: 'Admin access has already been claimed on this server' }, 409);
+      }
+
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const rawIdentifier =
+        typeof body.identifier === 'string'
+          ? body.identifier.trim()
+          : typeof body.username === 'string'
+            ? body.username.trim()
+            : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+
+      if (rawIdentifier.length < 3 || rawIdentifier.length > 80) {
+        return json({ error: 'Admin identifier must be between 3 and 80 characters' }, 400);
+      }
+      if (password.length < 8) {
+        return json({ error: 'Admin password must be at least 8 characters' }, 400);
+      }
+
+      const nextClaim: StoredAdminClaim = {
+        username: rawIdentifier,
+        passwordHash: await hashPassword(password),
+        sessionSecret: randomSessionSecret(),
+        claimedAt: new Date().toISOString(),
+      };
+      const saved = await writeAdminClaim(env, nextClaim);
+      if (!saved) {
+        return json({ error: 'Admin access has already been claimed' }, 409);
+      }
+      claimedAdmin = nextClaim;
+      await clearLoginAttempts(env, clientIp(request));
+      loginAttempts.delete(clientIp(request));
+
+      return json({
+        success: true,
+        token: await createSession(nextClaim.sessionSecret),
+        user: { email: nextClaim.username, role: 'superadmin' },
+      });
+    }
+
     if (method === 'POST' && segments[1] === 'login') {
       if (await signInBlocked(request, env)) {
         return json({ error: 'Too many sign-in attempts. Try again in a few minutes.' }, 429);
-      }
-
-      const envSecret = adminKey(env);
-      const envUser = adminUsername(env);
-
-      if (!envSecret || !envUser) {
-        return json(
-          {
-            error:
-              'Admin credentials are not configured on the server. Set ADMIN_USERNAME and ADMIN_SECRET_KEY in Settings → Secrets.',
-          },
-          503,
-        );
       }
 
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -520,11 +604,44 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
               : '';
       const supplied = typeof body.password === 'string' ? body.password : '';
 
+      const envSecret = adminKey(env);
+      const envUser = adminUsername(env);
+
+      if (envSecret && envUser) {
+        const identifierOk = await constantTimeDigestEqual(
+          normalizeIdentifier(rawIdentifier),
+          normalizeIdentifier(envUser),
+        );
+        const passwordOk = await constantTimeDigestEqual(supplied, envSecret);
+
+        if (!identifierOk || !passwordOk) {
+          await noteFailedLogin(request, env);
+          return json({ error: 'Invalid admin identifier or password' }, 401);
+        }
+
+        await clearLoginAttempts(env, clientIp(request));
+        loginAttempts.delete(clientIp(request));
+
+        return json({
+          success: true,
+          token: await createSession(envSecret),
+          user: { email: envUser, role: 'superadmin' },
+        });
+      }
+
+      const claim = await resolveClaimedAdmin(env);
+      if (!claim) {
+        return json(
+          { error: 'Admin access is not set up yet on this server.', setupRequired: true },
+          428,
+        );
+      }
+
       const identifierOk = await constantTimeDigestEqual(
         normalizeIdentifier(rawIdentifier),
-        normalizeIdentifier(envUser),
+        normalizeIdentifier(claim.username),
       );
-      const passwordOk = await constantTimeDigestEqual(supplied, envSecret);
+      const passwordOk = await verifyPassword(supplied, claim.passwordHash);
 
       if (!identifierOk || !passwordOk) {
         await noteFailedLogin(request, env);
@@ -536,8 +653,8 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
 
       return json({
         success: true,
-        token: await createSession(envSecret),
-        user: { email: envUser, role: 'superadmin' },
+        token: await createSession(claim.sessionSecret),
+        user: { email: claim.username, role: 'superadmin' },
       });
     }
 
@@ -569,15 +686,23 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       const nextText = sanitize(body.text).slice(0, 160);
       const nextCa = sanitize(body.ca_address).slice(0, 64);
+      const nextCaUrl = sanitizeHttpUrl(body.ca_url);
       const nextEnabled = body.enabled === undefined ? siteBanner.enabled : Boolean(body.enabled);
 
       if (nextEnabled && !nextText) {
         return json({ error: 'Banner text cannot be empty when the banner is enabled' }, 400);
       }
+      if (nextCa && !isSolanaAddress(nextCa)) {
+        return json({ error: 'Contract address (CA) must be a valid Solana address' }, 400);
+      }
+      if (nextCaUrl === null) {
+        return json({ error: 'CA link URL must be a valid http:// or https:// URL' }, 400);
+      }
 
       siteBanner = {
         text: nextText || 'CA dropping soon',
         ca_address: nextCa,
+        ca_url: nextCaUrl,
         enabled: nextEnabled,
         updated_at: new Date().toISOString(),
       };
@@ -587,7 +712,7 @@ async function handleApi(request: Request, env: AppEnv): Promise<Response> {
         'banner.update',
         'site_banner',
         siteBanner.enabled
-          ? `"${siteBanner.text}"${siteBanner.ca_address ? ` (${siteBanner.ca_address})` : ''}`
+          ? `"${siteBanner.text}"${siteBanner.ca_address ? ` (${siteBanner.ca_address})` : ''}${siteBanner.ca_url ? ` -> ${siteBanner.ca_url}` : ''}`
           : 'Banner hidden',
       );
       return json({ success: true, banner: siteBanner });

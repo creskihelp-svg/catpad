@@ -52,7 +52,7 @@ const readRoute = (): { tab: Tab; notFound: boolean; coinMint: string | null } =
   const coin = path.match(/^\/coin\/([1-9A-HJ-NP-Za-km-z]{32,44})$/);
   if (coin) return { tab: 'explore', notFound: false, coinMint: coin[1] };
 
-  const tab = PATH_TO_TAB[path];
+  const tab = PATH_TO_TAB[path.toLowerCase()];
   return tab ? { tab, notFound: false, coinMint: null } : { tab: 'explore', notFound: true, coinMint: null };
 };
 
@@ -68,6 +68,7 @@ export function AppContent() {
   const [banner, setBanner] = useState<SiteBanner>({
     text: 'CA dropping soon',
     ca_address: '',
+    ca_url: '',
     enabled: true,
   });
   const [adminToken, setAdminToken] = useState<string>('');

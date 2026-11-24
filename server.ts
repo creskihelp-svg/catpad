@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import worker from './worker/index.ts';
 
+dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env.local') });
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);

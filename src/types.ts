@@ -87,6 +87,7 @@ export interface AdminSession {
 export interface SiteBanner {
   text: string;
   ca_address?: string;
+  ca_url?: string;
   enabled: boolean;
   updated_at?: string;
 }

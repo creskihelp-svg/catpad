@@ -16,7 +16,7 @@ verified shelter wallet, and let anyone check the receipts.
 
 ```bash
 bun install
-cp .env.example .env      # optional; dev falls back to safe defaults
+cp .env.example .env      # fill in ADMIN_USERNAME & ADMIN_SECRET_KEY (.env is gitignored)
 bun run dev               # http://localhost:3000
 ```
 
@@ -61,13 +61,13 @@ Market cap and bonding-curve figures are `null` until a market data feed supplie
 
 ## Admin
 
-- `/admin`, linked from the footer.
-- Identifier `ADMIN_USERNAME` (default `stud.disc`, case-insensitive) plus password `ADMIN_SECRET_KEY`.
+- Navigate directly to `/admin` in the browser address bar (not linked from the public footer).
+- Configure `ADMIN_USERNAME` and `ADMIN_SECRET_KEY` in `.env` (for local / Node runs from GitHub) or in your deployment platform's Environment Variables / Secrets. Never commit `.env` to GitHub.
 - The password is exchanged for an HMAC-SHA256 token (`v1.<expiry>.<signature>`, 8 hours). The
   password itself is never a bearer token, and both credentials are compared in constant time.
 - 8 failed sign-ins per IP per 10 minutes, counted in D1.
 - Admin requests verify the signed token server-side; mutations are same-origin only.
-- Coins can be featured or hidden from the public directory; every action is written to the admin log.
+- Coins can be featured or hidden from the public directory, and the top banner & CA link can be updated live; every action is written to the admin log.
 
 ## Transparency and moderation
 

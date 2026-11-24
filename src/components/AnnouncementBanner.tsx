@@ -1,10 +1,24 @@
 import React, { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
 import { SiteBanner } from '../types.ts';
 
 interface AnnouncementBannerProps {
   banner: SiteBanner;
 }
+
+const safeExternalUrl = (raw?: string): string | null => {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 export const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({ banner }) => {
   const [copied, setCopied] = useState(false);
@@ -12,6 +26,7 @@ export const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({ banner }
   if (!banner.enabled || !banner.text.trim()) return null;
 
   const ca = banner.ca_address?.trim();
+  const caUrl = safeExternalUrl(banner.ca_url);
 
   const handleCopyCa = async () => {
     if (!ca) return;
@@ -53,6 +68,18 @@ export const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({ banner }
               <Copy className="h-3 w-3 opacity-80" aria-hidden="true" />
             )}
           </button>
+        )}
+
+        {caUrl && (
+          <a
+            href={caUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-[#E7B83C]/40 bg-[#E7B83C]/15 px-2 py-0.5 text-[11px] font-medium text-[#E7B83C] transition hover:border-[#E7B83C]/70 hover:bg-[#E7B83C]/25"
+          >
+            <span>{ca ? 'View CA' : 'View link'}</span>
+            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          </a>
         )}
       </div>
     </div>

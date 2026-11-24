@@ -9,6 +9,14 @@
  */
 
 import type { AdminAction, Charity, Donation, Launch, SiteBanner } from '../src/types.ts';
+import type { PasswordHashRecord } from './session.ts';
+
+export interface StoredAdminClaim {
+  username: string;
+  passwordHash: PasswordHashRecord;
+  sessionSecret: string;
+  claimedAt: string;
+}
 
 type D1Row = Record<string, unknown>;
 
@@ -467,6 +475,7 @@ export const readBannerSetting = async (env: DbEnv): Promise<SiteBanner | null> 
     return {
       text: typeof parsed.text === 'string' ? parsed.text : 'CA dropping soon',
       ca_address: typeof parsed.ca_address === 'string' ? parsed.ca_address : '',
+      ca_url: typeof parsed.ca_url === 'string' ? parsed.ca_url : '',
       enabled: parsed.enabled !== false,
       updated_at: row.updated_at,
     };
@@ -483,6 +492,7 @@ export const writeBannerSetting = async (env: DbEnv, banner: SiteBanner): Promis
   const payload = JSON.stringify({
     text: banner.text,
     ca_address: banner.ca_address ?? '',
+    ca_url: banner.ca_url ?? '',
     enabled: banner.enabled,
   });
   await db
@@ -492,6 +502,45 @@ export const writeBannerSetting = async (env: DbEnv, banner: SiteBanner): Promis
     )
     .bind('banner', payload, updatedAt)
     .run();
+};
+
+export const readAdminClaim = async (env: DbEnv): Promise<StoredAdminClaim | null> => {
+  const db = env.DB;
+  if (!db) return null;
+  await ensure(db, SETTINGS_SCHEMA);
+  const row = await db
+    .prepare('SELECT value FROM site_settings WHERE key = ?')
+    .bind('admin_claim')
+    .first<{ value: string }>();
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.value) as Partial<StoredAdminClaim>;
+    if (
+      typeof parsed.username === 'string' &&
+      parsed.passwordHash &&
+      typeof parsed.passwordHash.hash === 'string' &&
+      typeof parsed.passwordHash.salt === 'string' &&
+      typeof parsed.sessionSecret === 'string'
+    ) {
+      return parsed as StoredAdminClaim;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+export const writeAdminClaim = async (env: DbEnv, claim: StoredAdminClaim): Promise<boolean> => {
+  const db = env.DB;
+  if (!db) return true;
+  await ensure(db, SETTINGS_SCHEMA);
+  const res = await db
+    .prepare(
+      `INSERT OR IGNORE INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)`,
+    )
+    .bind('admin_claim', JSON.stringify(claim), claim.claimedAt)
+    .run();
+  return Boolean(res.success);
 };
 
 

@@ -93,13 +93,6 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentTab }) => {
               >
                 Risk
               </button>
-              <button
-                type="button"
-                onClick={() => setCurrentTab('admin')}
-                className="transition hover:text-white"
-              >
-                Admin
-              </button>
             </nav>
 
             {/* Social (X) + Built for cats */}

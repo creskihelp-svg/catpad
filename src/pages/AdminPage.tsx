@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PublicKey } from '@solana/web3.js';
 import { AdminAction, Charity, Launch, Donation, SiteBanner } from '../types.ts';
 import { useToast } from '../context/ToastContext.tsx';
 import { AnnouncementBanner } from '../components/AnnouncementBanner.tsx';
@@ -9,10 +10,12 @@ import {
   Trash2, 
   Flame, 
   AlertTriangle, 
+  Check,
   CheckCircle, 
   Coins, 
   Eye, 
   ExternalLink,
+  Link2,
   LogOut,
   RefreshCw,
   EyeOff,
@@ -20,6 +23,28 @@ import {
   Megaphone,
   X
 } from 'lucide-react';
+
+const isValidSolanaCa = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  try {
+    new PublicKey(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const isValidHttpUrl = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+};
 
 interface AdminPageProps {
   charities: Charity[];
@@ -48,14 +73,28 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+
+  useEffect(() => {
+    if (adminToken) return;
+    fetch('/api/admin/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.setupRequired === 'boolean') {
+          setSetupRequired(data.setupRequired);
+        }
+      })
+      .catch(() => {});
+  }, [adminToken]);
 
   // Active Admin Sub-tab
   const [adminTab, setAdminTab] = useState<'charities' | 'launches' | 'donations' | 'banner' | 'failures' | 'audit'>('charities');
 
-  // Top Announcement Banner state
+  // Top Announcement Banner & CA state
   const [bannerForm, setBannerForm] = useState<SiteBanner>({
     text: banner?.text ?? 'CA dropping soon',
     ca_address: banner?.ca_address ?? '',
+    ca_url: banner?.ca_url ?? '',
     enabled: banner?.enabled ?? true,
   });
   const [isSavingBanner, setIsSavingBanner] = useState(false);
@@ -65,6 +104,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       setBannerForm({
         text: banner.text,
         ca_address: banner.ca_address ?? '',
+        ca_url: banner.ca_url ?? '',
         enabled: banner.enabled,
       });
     }
@@ -144,7 +184,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     setIsLoggingIn(true);
 
     try {
-      const res = await fetch('/api/admin/login', {
+      const endpoint = setupRequired ? '/api/admin/setup' : '/api/admin/login';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: adminIdentifier, password: adminPassword }),
@@ -153,13 +194,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       if (!data) {
         throw new Error(`Unexpected response from auth server (${res.status}). Make sure the backend API is running.`);
       }
+      if (data.setupRequired) {
+        setSetupRequired(true);
+      }
       if (!res.ok) {
         throw new Error(data.error || 'Invalid credentials');
       }
 
       setAdminPassword('');
+      setSetupRequired(false);
       onAdminTokenChange(data.token);
       onRefreshData();
+      if (setupRequired) {
+        toast('Admin access claimed and signed in', 'success');
+      }
     } catch (err: any) {
       setLoginError(err.message || 'Authentication failed');
     } finally {
@@ -267,9 +315,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
-  // Save Announcement Banner
-  const handleSaveBanner = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Save Announcement Banner & Linked CA
+  const saveBannerPayload = async (payload: SiteBanner, successMessage: string) => {
+    const trimmedCa = (payload.ca_address ?? '').trim();
+    const trimmedUrl = (payload.ca_url ?? '').trim();
+
+    if (trimmedCa && !isValidSolanaCa(trimmedCa)) {
+      toast('Enter a valid Solana contract address (CA)', 'error');
+      return;
+    }
+    if (trimmedUrl && !isValidHttpUrl(trimmedUrl)) {
+      toast('CA link URL must start with https:// or http://', 'error');
+      return;
+    }
+
     setIsSavingBanner(true);
     try {
       const res = await fetch('/api/admin/banner', {
@@ -278,7 +337,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${adminToken}`,
         },
-        body: JSON.stringify(bannerForm),
+        body: JSON.stringify({
+          ...payload,
+          ca_address: trimmedCa,
+          ca_url: trimmedUrl,
+        }),
       });
       const data = await readJsonSafe(res);
       if (!res.ok) {
@@ -288,15 +351,42 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         return;
       }
       if (data?.banner) {
+        setBannerForm({
+          text: data.banner.text,
+          ca_address: data.banner.ca_address ?? '',
+          ca_url: data.banner.ca_url ?? '',
+          enabled: data.banner.enabled,
+        });
         onBannerUpdated?.(data.banner);
       }
       onRefreshData();
-      toast('Announcement banner updated', 'success');
+      toast(successMessage, 'success');
     } catch {
       toast('Failed to save announcement banner', 'error');
     } finally {
       setIsSavingBanner(false);
     }
+  };
+
+  const handleSaveBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBannerPayload(bannerForm, 'Banner & CA link updated');
+  };
+
+  const handleLinkLaunchCa = async (launch: Launch) => {
+    const nextText =
+      !bannerForm.text.trim() || bannerForm.text.trim().toLowerCase() === 'ca dropping soon'
+        ? `Official $${launch.symbol} CA is live`
+        : bannerForm.text.trim();
+    await saveBannerPayload(
+      {
+        text: nextText,
+        ca_address: launch.mint,
+        ca_url: `https://pump.fun/coin/${launch.mint}`,
+        enabled: true,
+      },
+      `Linked $${launch.symbol} CA to top banner`,
+    );
   };
 
   // Save Charity (Create or Update)
@@ -385,9 +475,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           <ShieldCheck className="w-6 h-6" />
         </div>
 
-        <h2 className="text-2xl font-semibold text-ink">CatPad Admin Portal</h2>
+        <h2 className="text-2xl font-semibold text-ink">
+          {setupRequired ? 'Claim Admin Access' : 'CatPad Admin Portal'}
+        </h2>
         <p className="text-xs text-muted mt-1 mb-6">
-          Server-side role checked administration. Add shelters, view launches, edit the banner, and monitor donations.
+          {setupRequired
+            ? 'No environment secrets are set on this host yet. Set your initial admin username and password once to lock and activate the portal.'
+            : 'Server-side role checked administration. Add shelters, view launches, edit the banner, and monitor donations.'}
         </p>
 
         {loginError && (
@@ -404,6 +498,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <input
               type="text"
               required
+              minLength={setupRequired ? 3 : 1}
               placeholder="Enter admin identifier"
               autoComplete="username"
               value={adminIdentifier}
@@ -419,8 +514,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <input
               type="password"
               required
-              autoComplete="current-password"
-              placeholder="Enter admin password"
+              minLength={setupRequired ? 8 : 1}
+              autoComplete={setupRequired ? 'new-password' : 'current-password'}
+              placeholder={setupRequired ? 'Choose password (min 8 chars)' : 'Enter admin password'}
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-line-strong text-sm text-ink placeholder:text-muted focus:border-accent outline-none font-mono"
@@ -428,9 +524,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </div>
 
           <div className="p-3 rounded-xl bg-page border border-line text-[11px] text-muted leading-relaxed">
-            Sessions are kept strictly in memory and expire after 8 hours. Configure{' '}
-            <code className="font-mono text-ink">ADMIN_USERNAME</code> and{' '}
-            <code className="font-mono text-ink">ADMIN_SECRET_KEY</code> in Settings → Secrets.
+            {setupRequired ? (
+              <>
+                Plug-and-play setup: your password is salted &amp; hashed on the server and locks once claimed. Set{' '}
+                <code className="font-mono text-ink">ADMIN_USERNAME</code> and{' '}
+                <code className="font-mono text-ink">ADMIN_SECRET_KEY</code> in env/Secrets anytime to override.
+              </>
+            ) : (
+              <>
+                Sessions stay in memory for 8 hours. Set{' '}
+                <code className="font-mono text-ink">ADMIN_USERNAME</code> and{' '}
+                <code className="font-mono text-ink">ADMIN_SECRET_KEY</code> in{' '}
+                <code className="font-mono text-ink">.env</code> or your hosting Secrets to manage via env.
+              </>
+            )}
           </div>
 
           <button
@@ -438,7 +545,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             disabled={isLoggingIn}
             className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-page font-bold text-sm transition disabled:opacity-50 cursor-pointer"
           >
-            {isLoggingIn ? 'Verifying with Server...' : 'Access Admin Dashboard'}
+            {isLoggingIn
+              ? 'Verifying with Server...'
+              : setupRequired
+                ? 'Claim & Open Admin Dashboard'
+                : 'Access Admin Dashboard'}
           </button>
         </form>
       </div>
@@ -536,7 +647,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             adminTab === 'banner' ? 'text-accent border-b-2 border-accent' : 'text-muted hover:text-ink'
           }`}
         >
-          Banner
+          Banner & CA
         </button>
         <button
           onClick={() => setAdminTab('failures')}
@@ -705,15 +816,40 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       </button>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <a
-                        href={`https://pump.fun/coin/${l.mint}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent hover:underline flex items-center justify-end space-x-1 font-mono"
-                      >
-                        <span>pump.fun</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                      <div className="flex items-center justify-end gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleLinkLaunchCa(l)}
+                          disabled={isSavingBanner}
+                          className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold transition ${
+                            banner?.ca_address === l.mint
+                              ? 'border border-accent/40 bg-accent/10 text-accent'
+                              : 'bg-surface text-ink hover:bg-card-hover'
+                          }`}
+                          title="Link this coin's CA to the site banner"
+                        >
+                          {banner?.ca_address === l.mint ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              <span>Linked</span>
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="w-3 h-3" />
+                              <span>Link CA</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={`https://pump.fun/coin/${l.mint}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline inline-flex items-center space-x-1 font-mono"
+                        >
+                          <span>pump.fun</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -769,17 +905,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         </div>
       )}
 
-      {/* TAB 4: ANNOUNCEMENT BANNER */}
+      {/* TAB 4: ANNOUNCEMENT BANNER & LINKED CA */}
       {adminTab === 'banner' && (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-ink flex items-center gap-2">
                 <Megaphone className="w-4 h-4 text-accent" />
-                <span>Top Announcement Banner</span>
+                <span>Top Banner &amp; Linked CA</span>
               </h3>
               <p className="text-xs text-muted mt-0.5">
-                Controls the slim announcement strip at the very top of the site.
+                Link your official Contract Address (CA) and destination URL in the sitewide top banner.
               </p>
             </div>
           </div>
@@ -813,6 +949,40 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               />
             </label>
 
+            {launchRows.length > 0 && (
+              <div>
+                <label htmlFor="quick-link-launch" className="mb-1 block font-semibold text-muted">
+                  Quick-fill from a launched coin
+                </label>
+                <select
+                  id="quick-link-launch"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const selected = launchRows.find((l) => l.mint === e.target.value);
+                    if (!selected) return;
+                    setBannerForm((prev) => ({
+                      ...prev,
+                      text:
+                        !prev.text.trim() || prev.text.trim().toLowerCase() === 'ca dropping soon'
+                          ? `Official $${selected.symbol} CA is live`
+                          : prev.text,
+                      ca_address: selected.mint,
+                      ca_url: `https://pump.fun/coin/${selected.mint}`,
+                      enabled: true,
+                    }));
+                  }}
+                  className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-xs text-ink outline-none focus:border-ink"
+                >
+                  <option value="">Choose a coin to pre-fill its CA &amp; Pump.fun link...</option>
+                  {launchRows.map((l) => (
+                    <option key={l.id} value={l.mint}>
+                      {l.name} (${l.symbol}) — {l.mint.slice(0, 6)}...{l.mint.slice(-6)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="mb-1 block font-semibold text-muted">
                 Banner message *
@@ -828,17 +998,94 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </div>
 
             <div>
-              <label className="mb-1 block font-semibold text-muted">
-                Contract address (CA) — optional
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="font-semibold text-muted">
+                  Contract address (CA)
+                </label>
+                {bannerForm.ca_address?.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setBannerForm((prev) => ({ ...prev, ca_address: '', ca_url: '' }))}
+                    className="text-[11px] font-medium text-muted hover:text-ink"
+                  >
+                    Clear CA
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 maxLength={64}
-                placeholder="Paste Solana mint / CA once live (shows a copyable badge)"
+                placeholder="Paste Solana mint / CA (shows a copyable badge)"
                 value={bannerForm.ca_address ?? ''}
                 onChange={(e) => setBannerForm((prev) => ({ ...prev, ca_address: e.target.value }))}
                 className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 font-mono text-xs text-ink outline-none focus:border-ink"
               />
+              {bannerForm.ca_address?.trim() && !isValidSolanaCa(bannerForm.ca_address) && (
+                <p className="mt-1 text-[11px] text-accent">
+                  Enter a valid Base58 Solana contract address.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block font-semibold text-muted">
+                Link CA to URL — optional
+              </label>
+              <input
+                type="url"
+                maxLength={300}
+                placeholder="https://pump.fun/coin/..."
+                value={bannerForm.ca_url ?? ''}
+                onChange={(e) => setBannerForm((prev) => ({ ...prev, ca_url: e.target.value }))}
+                className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 font-mono text-xs text-ink outline-none focus:border-ink"
+              />
+              {bannerForm.ca_url?.trim() && !isValidHttpUrl(bannerForm.ca_url) && (
+                <p className="mt-1 text-[11px] text-accent">
+                  URL must start with https:// or http://.
+                </p>
+              )}
+
+              {bannerForm.ca_address?.trim() && isValidSolanaCa(bannerForm.ca_address) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-muted">Quick link:</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBannerForm((prev) => ({
+                        ...prev,
+                        ca_url: `https://pump.fun/coin/${(prev.ca_address ?? '').trim()}`,
+                      }))
+                    }
+                    className="rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink transition hover:border-line-strong"
+                  >
+                    Pump.fun
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBannerForm((prev) => ({
+                        ...prev,
+                        ca_url: `https://dexscreener.com/solana/${(prev.ca_address ?? '').trim()}`,
+                      }))
+                    }
+                    className="rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink transition hover:border-line-strong"
+                  >
+                    DexScreener
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBannerForm((prev) => ({
+                        ...prev,
+                        ca_url: `https://solscan.io/token/${(prev.ca_address ?? '').trim()}`,
+                      }))
+                    }
+                    className="rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink transition hover:border-line-strong"
+                  >
+                    Solscan
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
@@ -848,6 +1095,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   setBannerForm({
                     text: 'CA dropping soon',
                     ca_address: '',
+                    ca_url: '',
                     enabled: true,
                   })
                 }
@@ -861,7 +1109,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 disabled={isSavingBanner}
                 className="rounded-xl bg-accent px-5 py-2.5 font-bold text-page transition hover:bg-accent-hover disabled:opacity-50"
               >
-                {isSavingBanner ? 'Saving...' : 'Save banner'}
+                {isSavingBanner ? 'Saving...' : 'Save banner & CA'}
               </button>
             </div>
           </form>
