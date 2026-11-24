@@ -194,8 +194,16 @@ const withSecurityHeaders = (response: Response): Response => {
   const headers = new Headers(response.headers);
   headers.set('x-content-type-options', 'nosniff');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
-  headers.set('x-frame-options', 'SAMEORIGIN');
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  const isNullBodyStatus =
+    response.status === 204 ||
+    response.status === 205 ||
+    response.status === 304 ||
+    (response.status >= 300 && response.status < 400);
+  return new Response(isNullBodyStatus ? null : response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 const noteFailure = (type: string, details: string) => {
@@ -819,17 +827,34 @@ export default {
         return json({ error: 'Method not allowed' }, 405);
       }
 
-      // Mutations are same-origin only.
+      // Mutations are same-origin only (tolerant of reverse proxy Host/Forwarded headers).
       const origin = request.headers.get('origin');
-      const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-      const originHost = origin ? new URL(origin).host : null;
-      if (
-        request.method !== 'GET' &&
-        originHost &&
-        originHost !== url.host &&
-        (!forwardedHost || originHost !== forwardedHost)
-      ) {
-        return json({ error: 'Cross-origin request blocked' }, 403);
+      if (request.method !== 'GET' && origin) {
+        let originHost: string | null = null;
+        try {
+          originHost = new URL(origin).host.toLowerCase();
+        } catch {
+          return json({ error: 'Invalid request origin' }, 403);
+        }
+
+        const stripDefaultPort = (hostValue: string) =>
+          hostValue.trim().toLowerCase().replace(/:(80|443)$/, '');
+
+        const forwardedHeaderHost = request.headers
+          .get('forwarded')
+          ?.match(/host=([^;,\s"]+)/i)?.[1];
+        const allowedHosts = [
+          url.host,
+          request.headers.get('host'),
+          request.headers.get('x-forwarded-host')?.split(',')[0],
+          forwardedHeaderHost,
+        ]
+          .filter((h): h is string => Boolean(h && h.trim()))
+          .map(stripDefaultPort);
+
+        if (!allowedHosts.includes(stripDefaultPort(originHost))) {
+          return json({ error: 'Cross-origin request blocked' }, 403);
+        }
       }
 
       try {
@@ -850,14 +875,31 @@ export default {
       }
     }
 
-    const response = await env.ASSETS.fetch(request);
-    if (response.status !== 404) return withSecurityHeaders(response);
-
-    // Client-side routes (e.g. /shelters, /transparency, unknown paths) render the SPA.
-    if (request.method === 'GET' && !/\.[a-z0-9]+$/i.test(url.pathname)) {
-      return withSecurityHeaders(await env.ASSETS.fetch(new Request(new URL('/', url), request)));
+    try {
+      const response = await env.ASSETS.fetch(request);
+      if (response.status !== 404 && response.status < 500) {
+        return withSecurityHeaders(response);
+      }
+    } catch {
+      /* fall through to SPA entry point */
     }
 
-    return withSecurityHeaders(response);
+    // Client-side routes (e.g. /admin, /shelters, /transparency, unknown paths) render the SPA.
+    if ((request.method === 'GET' || request.method === 'HEAD') && !/\.[a-z0-9]+$/i.test(url.pathname)) {
+      for (const entryPath of ['/index.html', '/']) {
+        try {
+          const spaResponse = await env.ASSETS.fetch(
+            new Request(new URL(entryPath, url), { method: 'GET' }),
+          );
+          if (spaResponse.status !== 404 && spaResponse.status < 500) {
+            return withSecurityHeaders(spaResponse);
+          }
+        } catch {
+          /* try next entry point */
+        }
+      }
+    }
+
+    return withSecurityHeaders(new Response('Not found', { status: 404 }));
   },
 };

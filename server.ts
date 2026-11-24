@@ -1,9 +1,12 @@
 import express from 'express';
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import worker from './worker/index.ts';
+import type { DbEnv } from './worker/db.ts';
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env.local') });
 dotenv.config();
@@ -23,17 +26,72 @@ const getPort = (): number => {
 
 const PORT = getPort();
 
+const createLocalSqliteDb = async (): Promise<DbEnv['DB']> => {
+  try {
+    const sqlite = await import('node:sqlite');
+    const dirCandidates = [
+      process.env.DATA_DIR?.trim(),
+      path.resolve(__dirname, '.catpad'),
+      path.join(os.tmpdir(), 'catpad-data'),
+    ].filter((d): d is string => Boolean(d));
+
+    let dbPath = '';
+    for (const dir of dirCandidates) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        const probe = path.join(dir, '.write-check');
+        fs.writeFileSync(probe, 'ok');
+        fs.unlinkSync(probe);
+        dbPath = path.join(dir, 'catpad.db');
+        break;
+      } catch {
+        /* try next writable directory */
+      }
+    }
+    if (!dbPath) return undefined;
+
+    const rawDb = new sqlite.DatabaseSync(dbPath);
+    const wrapStmt = (sql: string, params: unknown[] = []) => ({
+      bind: (...values: unknown[]) => wrapStmt(sql, values),
+      all: async <T = Record<string, unknown>>() => ({
+        results: rawDb.prepare(sql).all(...(params as any[])) as T[],
+      }),
+      first: async <T = Record<string, unknown>>() => {
+        const row = rawDb.prepare(sql).get(...(params as any[])) as T | undefined;
+        return row ?? null;
+      },
+      run: async () => {
+        const result = rawDb.prepare(sql).run(...(params as any[]));
+        return {
+          success: true,
+          meta: { changes: Number(result?.changes ?? 0) },
+        };
+      },
+    });
+    return {
+      prepare: (sql: string) => wrapStmt(sql),
+    };
+  } catch {
+    return undefined;
+  }
+};
+
 /**
- * Local development is a thin Node adapter around the same edge worker that is
- * deployed, so validation, sessions, throttles and on-chain verification can
- * never drift between `bun run dev` and production. Without a DB binding the
- * worker keeps its data in memory for the life of the process.
+ * Node adapter around the shared worker handler (`worker/index.ts`).
+ * Persists data via Node's built-in SQLite when available, or in memory as fallback.
  */
-const env = {
+const env: Record<string, unknown> & {
+  ADMIN_SECRET_KEY: string;
+  ADMIN_USERNAME: string;
+  SOLANA_NETWORK: string;
+  DB?: DbEnv['DB'];
+  ASSETS: { fetch: () => Promise<Response> };
+} = {
   ...process.env,
   ADMIN_SECRET_KEY: process.env.ADMIN_SECRET_KEY?.trim() || '',
   ADMIN_USERNAME: process.env.ADMIN_USERNAME?.trim() || '',
   SOLANA_NETWORK: process.env.SOLANA_NETWORK || 'devnet',
+  DB: undefined,
   ASSETS: { fetch: async () => new Response('Not found', { status: 404 }) },
 };
 
@@ -47,6 +105,9 @@ const toRequest = async (req: ExpressRequest): Promise<Request> => {
     if (Array.isArray(value)) value.forEach((item) => headers.append(key, item));
     else if (value !== undefined) headers.set(key, value);
   });
+  if (!headers.has('x-forwarded-for') && req.socket?.remoteAddress) {
+    headers.set('x-forwarded-for', req.socket.remoteAddress);
+  }
 
   const forwardedHost = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
   const forwardedProto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() || 'http';
@@ -66,22 +127,31 @@ app.use('/api', async (req: ExpressRequest, res: ExpressResponse) => {
     response.headers.forEach((value, key) => res.setHeader(key, value));
     res.send(Buffer.from(await response.arrayBuffer()));
   } catch (error) {
-    console.error('Dev API adapter error:', error);
+    console.error('API adapter error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 async function startServer() {
-  const isDev = process.env.NODE_ENV !== 'production';
+  env.DB = await createLocalSqliteDb();
+  const isProd = process.env.NODE_ENV === 'production' || process.argv.includes('--prod');
+  let servedViaVite = false;
 
-  if (isDev) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  if (!isProd) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true, hmr: false },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      servedViaVite = true;
+    } catch {
+      /* vite not installed in production bundle; fall back to built dist/ */
+    }
+  }
+
+  if (!servedViaVite) {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req: ExpressRequest, res: ExpressResponse) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));

@@ -141,7 +141,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           handleLogout();
           return null;
         }
-        return res.json();
+        return readJsonSafe(res);
       })
       .then((data) => {
         if (data && data.failures) setFailures(data.failures);
@@ -154,14 +154,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     if (!adminToken) return;
     const headers = { Authorization: `Bearer ${adminToken}` };
     fetch('/api/admin/audit', { headers })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => (res.ok ? readJsonSafe(res) : null))
       .then((data) => {
         if (data && Array.isArray(data.actions)) setAuditActions(data.actions);
       })
       .catch(() => {});
 
     fetch('/api/admin/launches', { headers })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => (res.ok ? readJsonSafe(res) : null))
       .then((data) => {
         if (data && Array.isArray(data.launches)) setAdminLaunches(data.launches);
       })
@@ -239,10 +239,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       if (res.ok) {
         onRefreshData();
       } else if (!handleUnauthorized(res.status)) {
-        const d = await res.json();
-        toast(d.error || 'Server error', 'error');
+        const d = await readJsonSafe(res);
+        toast(d?.error || `Server error (${res.status})`, 'error');
       }
-    } catch (err) {
+    } catch {
       toast('Failed to toggle featured status', 'error');
     }
   };
@@ -259,17 +259,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         body: JSON.stringify({ unlisted: !launch.is_unlisted }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setAdminLaunches((prev) =>
-          prev ? prev.map((l) => (l.mint === launch.mint ? { ...l, is_unlisted: data.is_unlisted } : l)) : prev,
-        );
+        const data = await readJsonSafe(res);
+        if (data) {
+          setAdminLaunches((prev) =>
+            prev ? prev.map((l) => (l.mint === launch.mint ? { ...l, is_unlisted: data.is_unlisted } : l)) : prev,
+          );
+          toast(data.is_unlisted ? 'Coin hidden from the directory' : 'Coin restored to the directory', 'success');
+        }
         onRefreshData();
-        toast(data.is_unlisted ? 'Coin hidden from the directory' : 'Coin restored to the directory', 'success');
       } else if (!handleUnauthorized(res.status)) {
-        const d = await res.json();
-        toast(d.error || 'Server error', 'error');
+        const d = await readJsonSafe(res);
+        toast(d?.error || `Server error (${res.status})`, 'error');
       }
-    } catch (err) {
+    } catch {
       toast('Failed to update the launch visibility', 'error');
     }
   };
@@ -288,10 +290,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       if (res.ok) {
         onRefreshData();
       } else if (!handleUnauthorized(res.status)) {
-        const d = await res.json();
-        toast(d.error || 'Server error', 'error');
+        const d = await readJsonSafe(res);
+        toast(d?.error || `Server error (${res.status})`, 'error');
       }
-    } catch (err) {
+    } catch {
       toast('Failed to update charity verification', 'error');
     }
   };
@@ -307,10 +309,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       if (res.ok) {
         onRefreshData();
       } else if (!handleUnauthorized(res.status)) {
-        const d = await res.json();
-        toast(d.error || 'Server error', 'error');
+        const d = await readJsonSafe(res);
+        toast(d?.error || `Server error (${res.status})`, 'error');
       }
-    } catch (err) {
+    } catch {
       toast('Failed to delete charity', 'error');
     }
   };

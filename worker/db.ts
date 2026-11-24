@@ -534,12 +534,20 @@ export const writeAdminClaim = async (env: DbEnv, claim: StoredAdminClaim): Prom
   const db = env.DB;
   if (!db) return true;
   await ensure(db, SETTINGS_SCHEMA);
+  const existing = await db
+    .prepare('SELECT 1 AS present FROM site_settings WHERE key = ?')
+    .bind('admin_claim')
+    .first<{ present: number }>();
+  if (existing) return false;
+
   const res = await db
     .prepare(
       `INSERT OR IGNORE INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)`,
     )
     .bind('admin_claim', JSON.stringify(claim), claim.claimedAt)
     .run();
+  const changes = (res as unknown as { meta?: { changes?: number } }).meta?.changes;
+  if (typeof changes === 'number') return changes > 0;
   return Boolean(res.success);
 };
 
