@@ -1,12 +1,14 @@
 import express from 'express';
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import worker from './worker/index.ts';
-import type { DbEnv } from './worker/db.ts';
+import {
+  buildNodeWorkerEnv,
+  handleNodeWorkerRequest,
+  type NodeWorkerEnv,
+} from './worker/node-adapter.ts';
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env.local') });
 dotenv.config();
@@ -26,115 +28,22 @@ const getPort = (): number => {
 
 const PORT = getPort();
 
-const createLocalSqliteDb = async (): Promise<DbEnv['DB']> => {
-  try {
-    const sqlite = await import('node:sqlite');
-    const dirCandidates = [
-      process.env.DATA_DIR?.trim(),
-      path.resolve(__dirname, '.catpad'),
-      path.join(os.tmpdir(), 'catpad-data'),
-    ].filter((d): d is string => Boolean(d));
-
-    let dbPath = '';
-    for (const dir of dirCandidates) {
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-        const probe = path.join(dir, '.write-check');
-        fs.writeFileSync(probe, 'ok');
-        fs.unlinkSync(probe);
-        dbPath = path.join(dir, 'catpad.db');
-        break;
-      } catch {
-        /* try next writable directory */
-      }
-    }
-    if (!dbPath) return undefined;
-
-    const rawDb = new sqlite.DatabaseSync(dbPath);
-    const wrapStmt = (sql: string, params: unknown[] = []) => ({
-      bind: (...values: unknown[]) => wrapStmt(sql, values),
-      all: async <T = Record<string, unknown>>() => ({
-        results: rawDb.prepare(sql).all(...(params as any[])) as T[],
-      }),
-      first: async <T = Record<string, unknown>>() => {
-        const row = rawDb.prepare(sql).get(...(params as any[])) as T | undefined;
-        return row ?? null;
-      },
-      run: async () => {
-        const result = rawDb.prepare(sql).run(...(params as any[]));
-        return {
-          success: true,
-          meta: { changes: Number(result?.changes ?? 0) },
-        };
-      },
-    });
-    return {
-      prepare: (sql: string) => wrapStmt(sql),
-    };
-  } catch {
-    return undefined;
-  }
-};
-
-/**
- * Node adapter around the shared worker handler (`worker/index.ts`).
- * Persists data via Node's built-in SQLite when available, or in memory as fallback.
- */
-const env: Record<string, unknown> & {
-  ADMIN_SECRET_KEY: string;
-  ADMIN_USERNAME: string;
-  SOLANA_NETWORK: string;
-  DB?: DbEnv['DB'];
-  ASSETS: { fetch: () => Promise<Response> };
-} = {
-  ...process.env,
-  ADMIN_SECRET_KEY: process.env.ADMIN_SECRET_KEY?.trim() || '',
-  ADMIN_USERNAME: process.env.ADMIN_USERNAME?.trim() || '',
-  SOLANA_NETWORK: process.env.SOLANA_NETWORK || 'devnet',
-  DB: undefined,
-  ASSETS: { fetch: async () => new Response('Not found', { status: 404 }) },
-};
-
-const toRequest = async (req: ExpressRequest): Promise<Request> => {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  const body = chunks.length ? Buffer.concat(chunks) : undefined;
-
-  const headers = new Headers();
-  Object.entries(req.headers).forEach(([key, value]) => {
-    if (Array.isArray(value)) value.forEach((item) => headers.append(key, item));
-    else if (value !== undefined) headers.set(key, value);
-  });
-  if (!headers.has('x-forwarded-for') && req.socket?.remoteAddress) {
-    headers.set('x-forwarded-for', req.socket.remoteAddress);
-  }
-
-  const forwardedHost = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
-  const forwardedProto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() || 'http';
-  const host = forwardedHost || req.headers.host || 'localhost';
-
-  return new Request(`${forwardedProto}://${host}${req.originalUrl}`, {
-    method: req.method,
-    headers,
-    body: body as BodyInit | undefined,
-  });
+let envPromise: Promise<NodeWorkerEnv> | null = null;
+const getEnv = () => {
+  if (!envPromise) envPromise = buildNodeWorkerEnv();
+  return envPromise;
 };
 
 app.use('/api', async (req: ExpressRequest, res: ExpressResponse) => {
-  try {
-    const response = await worker.fetch(await toRequest(req), env as Parameters<typeof worker.fetch>[1]);
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-    res.send(Buffer.from(await response.arrayBuffer()));
-  } catch (error) {
-    console.error('API adapter error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  const env = await getEnv();
+  await handleNodeWorkerRequest(req, res, env);
 });
 
 async function startServer() {
-  env.DB = await createLocalSqliteDb();
+  const env = await getEnv();
   const isProd = process.env.NODE_ENV === 'production' || process.argv.includes('--prod');
+  const distDir = path.resolve(__dirname, 'dist');
+  const distIndex = path.join(distDir, 'index.html');
   let servedViaVite = false;
 
   if (!isProd) {
@@ -152,9 +61,26 @@ async function startServer() {
   }
 
   if (!servedViaVite) {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req: ExpressRequest, res: ExpressResponse) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    // Auto-build dist/ if started straight from a fresh repo clone without a prior build step.
+    if (!fs.existsSync(distIndex)) {
+      try {
+        const { build } = await import('vite');
+        console.log('dist/index.html missing — building frontend bundle...');
+        await build();
+      } catch (err) {
+        console.error('Could not auto-build dist/:', err);
+      }
+    }
+
+    app.use(express.static(distDir));
+    app.get('*', (req: ExpressRequest, res: ExpressResponse) => {
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      if (!fs.existsSync(distIndex)) {
+        return res.status(503).send('Frontend build is missing. Run "npm run build" first.');
+      }
+      return res.sendFile(distIndex);
     });
   }
 

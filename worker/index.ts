@@ -875,27 +875,37 @@ export default {
       }
     }
 
-    try {
-      const response = await env.ASSETS.fetch(request);
-      if (response.status !== 404 && response.status < 500) {
-        return withSecurityHeaders(response);
+    if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
+      try {
+        const response = await env.ASSETS.fetch(request);
+        if (response.status !== 404 && response.status < 500) {
+          return withSecurityHeaders(response);
+        }
+      } catch {
+        /* fall through to SPA entry point */
       }
-    } catch {
-      /* fall through to SPA entry point */
-    }
 
-    // Client-side routes (e.g. /admin, /shelters, /transparency, unknown paths) render the SPA.
-    if ((request.method === 'GET' || request.method === 'HEAD') && !/\.[a-z0-9]+$/i.test(url.pathname)) {
-      for (const entryPath of ['/index.html', '/']) {
-        try {
-          const spaResponse = await env.ASSETS.fetch(
-            new Request(new URL(entryPath, url), { method: 'GET' }),
-          );
-          if (spaResponse.status !== 404 && spaResponse.status < 500) {
-            return withSecurityHeaders(spaResponse);
+      // Client-side routes (e.g. /admin, /shelters, /transparency, unknown paths) render the SPA.
+      const isHtmlOrPath = !/\.[a-z0-9]+$/i.test(url.pathname) || /\.html?$/i.test(url.pathname);
+      if ((request.method === 'GET' || request.method === 'HEAD') && isHtmlOrPath) {
+        let redirectFallback: Response | null = null;
+        for (const entryPath of ['/', '/index.html']) {
+          try {
+            const spaResponse = await env.ASSETS.fetch(
+              new Request(new URL(entryPath, url), { method: 'GET' }),
+            );
+            if (spaResponse.status >= 200 && spaResponse.status < 300) {
+              return withSecurityHeaders(spaResponse);
+            }
+            if (spaResponse.status >= 300 && spaResponse.status < 400 && !redirectFallback) {
+              redirectFallback = spaResponse;
+            }
+          } catch {
+            /* try next entry point */
           }
-        } catch {
-          /* try next entry point */
+        }
+        if (redirectFallback) {
+          return withSecurityHeaders(redirectFallback);
         }
       }
     }

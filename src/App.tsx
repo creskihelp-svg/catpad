@@ -23,11 +23,13 @@ import { Charity, Donation, Launch, SiteBanner, Tab } from './types.ts';
 
 const PATH_TO_TAB: Record<string, Tab> = {
   '/': 'explore',
+  '/index.html': 'explore',
   '/coins': 'explore',
   '/shelters': 'charities',
   '/charities': 'charities',
   '/transparency': 'transparency',
   '/admin': 'admin',
+  '/admin.html': 'admin',
   '/terms': 'terms',
   '/privacy': 'privacy',
   '/risk': 'risk',
@@ -51,6 +53,17 @@ const readRoute = (): { tab: Tab; notFound: boolean; coinMint: string | null } =
   // with its own title and social tags for crawlers.
   const coin = path.match(/^\/coin\/([1-9A-HJ-NP-Za-km-z]{32,44})$/);
   if (coin) return { tab: 'explore', notFound: false, coinMint: coin[1] };
+
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get('tab')?.toLowerCase() as Tab | undefined;
+  if (tabParam && tabParam in TAB_TO_PATH && tabParam !== 'launch') {
+    return { tab: tabParam, notFound: false, coinMint: null };
+  }
+
+  const hashPath = window.location.hash.replace(/^#\/?/, '/').replace(/\/+$/, '');
+  if (hashPath && hashPath !== '/' && PATH_TO_TAB[hashPath.toLowerCase()]) {
+    return { tab: PATH_TO_TAB[hashPath.toLowerCase()], notFound: false, coinMint: null };
+  }
 
   const tab = PATH_TO_TAB[path.toLowerCase()];
   return tab ? { tab, notFound: false, coinMint: null } : { tab: 'explore', notFound: true, coinMint: null };
